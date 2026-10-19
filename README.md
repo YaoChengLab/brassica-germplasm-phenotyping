@@ -2,7 +2,7 @@
 
 An image-based platform that links Brassica germplasm records, plant images, and trait data.
 
-> **Status:** under preparation. Source code, an example dataset and model weights will be added to this repository in upcoming commits.
+> **Status:** under preparation. The imaging workflow (`imaging/`, `qc/`, `demo/`) is available; the platform, the license file and the model weights will be added in upcoming commits.
 
 ## Planned contents
 

@@ -1,0 +1,18 @@
+# Inference, traits and the QC review UI share this environment.
+# Versions follow the manuscript (Methods, software versions); the torch wheel also runs on machines without a GPU.
+name: bgp-imaging
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+      - torch==2.7.1
+      - torchvision==0.22.1
+      - ultralytics==8.3.228
+      - opencv-python==4.11.0.86
+      - numpy==1.26.4
+      - scikit-image==0.24.0
+      - scipy==1.13.1
+      - fastapi==0.121.0
+      - uvicorn==0.38.0

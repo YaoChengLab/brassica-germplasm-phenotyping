@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.env
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+backup_*.sql
+node_modules/
+
+# data and weights, supplied at run time
+raspi_RGB/
+qc/data/
+imaging/weights/
+imaging/out/
+raspi_RGB_overlay/

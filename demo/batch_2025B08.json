@@ -1,0 +1,24 @@
+{
+  "batch_code": "2025B08",
+  "plant_groups": [
+    {
+      "cultivar_code": "s0123",
+      "treatment_code": "Control",
+      "replicate_count": 4,
+      "walkin_visits": [
+        {"chamber_code": "R141", "entry_date": "2025-07-03", "exit_date": "2025-07-11", "growth_condition_id": 7}
+      ],
+      "observation": {
+        "growth_condition_id": 7,
+        "entry_date": "2025-07-15", "entry_time": "15:00:00",
+        "exit_date": "2025-08-11", "exit_time": "09:00:00",
+        "individuals": [
+          {"replicate_code": 1, "rack_code": "A1_2", "coordinate_x": 1153, "coordinate_y": 1201},
+          {"replicate_code": 2, "rack_code": "A1_2", "coordinate_x": 1503, "coordinate_y": 1187},
+          {"replicate_code": 3, "rack_code": "A1_2", "coordinate_x": 1856, "coordinate_y": 1201},
+          {"replicate_code": 4, "rack_code": "A1_2", "coordinate_x": 2190, "coordinate_y": 1201}
+        ]
+      }
+    }
+  ]
+}

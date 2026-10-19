@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>leaf-canopy-qc — 葉片歸屬審查</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; font-size: 13px; display: flex; height: 100vh; }
+  #side { width: 290px; flex: 0 0 auto; border-right: 1px solid #ccc; overflow-y: auto; padding: 6px; }
+  .card { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin-bottom: 8px; background: #fafafa; }
+  #imgcol { flex: 0 0 auto; display: flex; flex-direction: column; }
+  #imgwrap { position: relative; width: 560px; height: 560px; flex: 0 0 auto; margin: 6px; }
+  #imgwrap img, #imgwrap svg { position: absolute; top: 0; left: 0; width: 560px; height: 560px; }
+  #imgctrl { width: 560px; margin: 0 6px 6px 6px; }
+  #charts { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 6px; min-width: 360px; }
+  #charts svg { background: #fafafa; border: 1px solid #ddd; width: 100%; flex: 1 1 0; min-height: 200px; }
+  .batch { font-weight: bold; cursor: pointer; margin-top: 4px; }
+  .cult { cursor: pointer; margin-left: 10px; color: #225; }
+  .plant { cursor: pointer; margin-left: 22px; padding: 1px 0; }
+  .plant:hover { background: #eef; }
+  .plant.sel { background: #cce; }
+  .rev-tick { color: green; display: none; }
+  .rev .rev-tick { display: inline; }
+  .cot-tick { color: #a0f; font-size: 11px; display: none; }
+  .cot_done .cot-tick { display: inline; }
+  polygon.keep { fill: rgba(60,230,60,.25); stroke: #1a1; stroke-width: 1.5; cursor: pointer; }
+  polygon.reject { fill: none; stroke: rgba(220,40,40,.7); stroke-width: 2; pointer-events: all; cursor: pointer; }
+  polygon.ov { stroke-dasharray: 4 2; }
+  polygon.cot { stroke: #a0f; stroke-width: 3; stroke-dasharray: 2 3; }
+  polygon.hull { fill: none; stroke: #ff1e1e; stroke-width: 2.5; stroke-dasharray: 7 4; pointer-events: none; }
+  button { font-size: 13px; padding: 3px 8px; }
+  .leg { font-size: 11px; color: #555; }
+</style>
+</head>
+<body>
+<div id="side">
+  <div class="card"><b>Plants</b> <a href="/curves" style="font-size:11px;color:#36c;float:right">📈 品系曲線</a><div id="tree">loading…</div></div>
+  <div class="card">
+    <div id="finfo">—</div>
+    <p class="leg">綠遮罩=KEEP(yes)　紅框=REJECT(no)　虛線=已人工改　<span style="color:#a0f">紫=子葉</span>　箭頭=base→tip<br>
+    點葉 = 翻轉歸屬。<b>Shift+點葉 = 標/取消子葉</b>。點曲線 → 定位該天。<br>
+    曲線：灰=raw(before)，藍=after(編輯後)。<br>
+    熱鍵 <b>a</b>/<b>d</b>=前/後（逐日=天／逐時=幀），<b>w</b>/<b>s</b>=前/後一天。</p>
+    <div style="margin-top:4px"><label><input type="checkbox" id="modeChk" checked> <b>逐日</b>（每天一張照片、折線一點；取消勾選＝逐時全幀）</label></div>
+    <div style="margin-top:4px"><label><input type="checkbox" id="dapdChk"> 排除子葉預覽（DAPD）</label> <span id="cotInfo" class="leg"></span></div>
+  </div>
+</div>
+<div id="imgcol">
+  <div id="imgwrap">
+    <img id="frameImg" src="">
+    <svg id="overlay" viewBox="0 0 600 600"></svg>
+  </div>
+  <div class="card" id="imgctrl">
+    <div>
+      <button id="reviewBtn">標記為已審查</button> <span id="revState"></span>
+      &nbsp;&nbsp;
+      <button id="cotDoneBtn" style="color:#a0f;border-color:#c8a0f0">子葉標記完成</button> <span id="cotDoneState" style="color:#a0f"></span>
+    </div>
+    <div style="margin-top:8px">
+      <div style="font-size:11px;color:#555;margin-bottom:2px">植株觀察註記 <span id="noteState"></span></div>
+      <textarea id="noteBox" rows="3" placeholder="審查後的自然語言觀察…"
+        style="width:100%;font-size:12px;font-family:inherit;resize:vertical"></textarea>
+      <div style="margin-top:4px">
+        <button id="noteSave">儲存</button>
+        <button id="noteClear">清除</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="charts">
+  <svg id="cCount"></svg>
+  <svg id="cArea"></svg>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+let PID=null, DATA=null, OV={}, CLS={}, autoKeep={}, frames=[], curIdx=0, afterByStem={};
+let MODE='day', dayReps=[];              // 逐日/逐時；dayReps=每個 DAF 的正午代表幀 index（升冪）
+const isCot = tid => CLS[tid]==='cotyledon';
+const dapdOn = () => $('#dapdChk').checked;
+const dayMode = () => MODE==='day';
+// 每個 DAF 取「離正午(hour 12)最近」的幀當代表（與 jumpToDaf 規則一致）
+function computeDayReps(){
+  const byDaf=new Map();
+  frames.forEach((f,k)=>{ const cur=byDaf.get(f.daf);
+    if(cur==null || Math.abs(f.hour-12)<Math.abs(frames[cur].hour-12)) byDaf.set(f.daf,k); });
+  dayReps=[...byDaf.keys()].sort((a,b)=>a-b).map(daf=>byDaf.get(daf));
+}
+// 逐日模式下折線/照片只走每日代表幀
+function plotFrames(){ return dayMode() ? dayReps.map(k=>frames[k]) : frames; }
+
+async function loadTree(){
+  const t = await (await fetch('/api/tree')).json();
+  const el = $('#tree'); el.innerHTML='';
+  for(const [batch,cults] of Object.entries(t)){
+    const bd=document.createElement('div'); bd.className='batch'; bd.innerHTML='▸ '+batch+'<span class="rev-tick"> ✓</span><span class="cot-tick"> ✓</span>';
+    const box=document.createElement('div'); box.style.display='none';
+    bd.onclick=()=>box.style.display=box.style.display==='none'?'block':'none';
+    for(const [cult,plants] of Object.entries(cults)){
+      const cd=document.createElement('div'); cd.className='cult'; cd.innerHTML=cult+' ('+plants.length+')'+'<span class="rev-tick"> ✓</span><span class="cot-tick"> ✓</span>';
+      const pbox=document.createElement('div'); pbox.style.display='none';
+      cd.onclick=e=>{e.stopPropagation();pbox.style.display=pbox.style.display==='none'?'block':'none';};
+      for(const p of plants){
+        const pd=document.createElement('div'); pd.className='plant'+(p.reviewed?' rev':'')+(p.cotyledon_done?' cot_done':''); pd.innerHTML=p.plant+'<span class="rev-tick"> ✓</span><span class="cot-tick"> ✓</span>';
+        pd.dataset.id=p.id; pd.onclick=e=>{e.stopPropagation();selectPlant(p.id,pd);};
+        pbox.appendChild(pd);
+      }
+      cd.appendChild(pbox); box.appendChild(cd);
+    }
+    bd.appendChild(box); el.appendChild(bd);
+  }
+  updateRollup();
+}
+
+// 子層全 reviewed / cot_done → 父層階層也打勾 (cult: 所有 plant；batch: 所有 cult)
+function updateRollup(){
+  document.querySelectorAll('#tree .cult').forEach(cd=>{
+    const plants=[...cd.querySelectorAll('.plant')];
+    cd.classList.toggle('rev', plants.length>0 && plants.every(p=>p.classList.contains('rev')));
+    cd.classList.toggle('cot_done', plants.length>0 && plants.every(p=>p.classList.contains('cot_done')));
+  });
+  document.querySelectorAll('#tree .batch').forEach(bd=>{
+    const cults=[...bd.querySelectorAll('.cult')];
+    bd.classList.toggle('rev', cults.length>0 && cults.every(c=>c.classList.contains('rev')));
+    bd.classList.toggle('cot_done', cults.length>0 && cults.every(c=>c.classList.contains('cot_done')));
+  });
+}
+
+async function selectPlant(id, el){
+  document.querySelectorAll('.plant.sel').forEach(e=>e.classList.remove('sel'));
+  if(el) el.classList.add('sel');
+  PID=id;
+  fetch('/api/warm?id='+encodeURIComponent(id));   // 背景把整株影像讀進 server RAM
+  DATA = await (await fetch('/api/plant?id='+encodeURIComponent(id))).json();
+  OV = await (await fetch('/api/overrides?id='+encodeURIComponent(id))).json();
+  CLS = await (await fetch('/api/classes?id='+encodeURIComponent(id))).json();
+  frames = DATA.frames.slice().sort((a,b)=> a.date===b.date ? a.hour-b.hour : a.date<b.date?-1:1);
+  autoKeep={};
+  for(const fr of frames) for(const lf of fr.leaves) autoKeep[lf.tid]=lf.keep;
+  computeDayReps();
+  curIdx = (dayMode() && dayReps.length) ? dayReps[0] : 0;
+  await refreshAfter();
+  drawCurves(); showFrame(curIdx);
+  const rev = el && el.classList.contains('rev');
+  $('#revState').textContent = rev?'（已審查）':'';
+  const cotDone = el && el.classList.contains('cot_done');
+  $('#cotDoneState').textContent = cotDone?'（已標）':'';
+  updateCotInfo();
+  loadNote(id);
+}
+
+function setNoteState(txt,color){ const s=$('#noteState'); s.textContent=txt; s.style.color=color||'#1a1'; }
+async function loadNote(id){
+  const r = await (await fetch('/api/note?id='+encodeURIComponent(id))).json();
+  $('#noteBox').value = r.text||''; setNoteState('');
+}
+function writeNote(text){            // 按鈕觸發：寫入後端 (空字串 → 後端刪除)
+  if(!PID) return Promise.resolve();
+  const id=PID;
+  setNoteState('儲存中…','#888');
+  return fetch('/api/note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,text})})
+    .then(()=>{ if(PID===id) setNoteState(text.trim()?'已儲存':'已清除'); });
+}
+
+function eff(tid){ return (tid in OV) ? OV[tid] : (autoKeep[tid]?1:0); }
+
+async function refreshAfter(){
+  const ex = dapdOn() ? '&exclude_class=cotyledon' : '';
+  const r = await (await fetch('/api/after?id='+encodeURIComponent(PID)+ex)).json();
+  afterByStem={}; for(const f of r.frames) afterByStem[f.stem]=f;
+}
+function updateCotInfo(){
+  const n=Object.values(CLS).filter(k=>k==='cotyledon').length;
+  $('#cotInfo').textContent = n ? `子葉標記 ${n} 軌跡` : '';
+}
+
+function frameX(fr){ return fr.daf + (fr.hour-12)/24; }   // 連續分數 DAF (逐時)
+function curFrameX(){ const fr=frames[curIdx]; return fr ? frameX(fr) : null; }
+// 只移動橘色游標線（不重建整張圖）——a/d/w/s 換幀時資料不變，僅游標移動
+function moveCursor(svg,cx){
+  const g=svg._geo; if(!g) return;
+  const line=svg.querySelector('.cursorline'); if(!line) return;
+  const x=(cx==null?-99:(g.xmax===g.xmin?g.padL:g.padL+(cx-g.xmin)/(g.xmax-g.xmin)*(g.W-g.padL-g.padR)));
+  line.setAttribute('x1',x.toFixed(1)); line.setAttribute('x2',x.toFixed(1));
+}
+function updateCursor(){ const cx=curFrameX(); moveCursor($('#cCount'),cx); moveCursor($('#cArea'),cx); }
+function drawCurves(){
+  const cx = curFrameX();
+  const pf = plotFrames();                    // 逐日=每日代表幀；逐時=全幀
+  const unit = dayMode()?'逐日':'逐時';
+  const rawCount = pf.map(fr=>({x:frameX(fr), y:(fr.raw_count!=null?fr.raw_count:fr.leaves.length)}));
+  const aftCount = pf.map(fr=>({x:frameX(fr), y:fr.leaves.reduce((n,lf)=>n+((eff(lf.tid)===1 && !(dapdOn()&&isCot(lf.tid)))?1:0),0)}));
+  lineChart($('#cCount'),`葉片數 (${unit})`, rawCount, aftCount, cx);
+  const rawArea = pf.map(fr=>({x:frameX(fr), y:(fr.raw_area!=null?fr.raw_area:0)}));
+  const aftArea = pf.map(fr=>({x:frameX(fr), y:(afterByStem[fr.stem]?afterByStem[fr.stem].area_after:(fr.keep_area!=null?fr.keep_area:0))}));
+  // convex hull 面積（kept 葉，隨 override 即時）→ hull 與 leaf 線間距 = 絕對殘差/開放程度
+  const hullArea = pf.map(fr=>{
+    const allp=fr.leaves.filter(lf=>eff(lf.tid)===1 && lf.points.length>=3).flatMap(lf=>lf.points);
+    return {x:frameX(fr), y:(allp.length>=3 ? polyArea(convexHull(allp)) : null)};
+  });
+  lineChart($('#cArea'),`葉面積(px) (${unit})`, rawArea, aftArea, cx, {pts:hullArea,color:'#e11',label:'convex hull'});
+}
+
+function fmtY(v){ return v>=10000? (v/1000).toFixed(0)+'k' : v>=1000? (v/1000).toFixed(1)+'k'
+                 : (Number.isInteger(v)? v : v.toFixed(1)); }
+
+function lineChart(svg,title,raw,after,curDaf,extra){
+  const W=svg.clientWidth||460, H=svg.clientHeight||240, padL=46,padR=12,padT=18,padB=26;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);   // 內部座標 = 像素，隨容器縮放
+  const xs=raw.map(p=>p.x);
+  const ys=raw.concat(after).concat(extra?extra.pts:[]).map(p=>p.y).filter(v=>v!=null);
+  const xmin=Math.min(...xs),xmax=Math.max(...xs),ymax=Math.max(1,...ys);
+  const sx=x=> padL + (xmax===xmin?0:(x-xmin)/(xmax-xmin))*(W-padL-padR);
+  const sy=y=> (H-padB) - (y/ymax)*(H-padB-padT);
+  const path=pts=>pts.filter(p=>p.y!=null).map((p,i)=>(i?'L':'M')+sx(p.x).toFixed(1)+','+sy(p.y).toFixed(1)).join(' ');
+  let s=`<text x="6" y="13" font-size="12" font-weight="bold">${title}</text>`;
+  // y gridlines + labels (0 / mid / max)
+  for(const f of [0,0.25,0.5,0.75,1]){ const yv=ymax*f, y=sy(yv);
+    s+=`<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" stroke="${f?'#eee':'#bbb'}"/>`;
+    s+=`<text x="${padL-4}" y="${(y+3).toFixed(1)}" font-size="9" text-anchor="end" fill="#666">${fmtY(yv)}</text>`;
+  }
+  // x ticks (DAF)
+  const nT=Math.min(7, xmax-xmin+1);
+  for(let t=0;t<nT;t++){ const xv=Math.round(xmin+(xmax-xmin)*t/Math.max(1,nT-1)), x=sx(xv);
+    s+=`<line x1="${x.toFixed(1)}" y1="${H-padB}" x2="${x.toFixed(1)}" y2="${H-padB+3}" stroke="#999"/>`;
+    s+=`<text x="${x.toFixed(1)}" y="${H-padB+13}" font-size="9" text-anchor="middle" fill="#666">${xv}</text>`;
+  }
+  s+=`<text x="${((padL+W-padR)/2).toFixed(0)}" y="${H-3}" font-size="9" text-anchor="middle" fill="#888">DAF (天)</text>`;
+  s+=`<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#999"/>`;
+  {const x=(curDaf!=null?sx(curDaf):-99);s+=`<line class="cursorline" x1="${x.toFixed(1)}" y1="${padT}" x2="${x.toFixed(1)}" y2="${H-padB}" stroke="#fa0" stroke-width="1.5" stroke-dasharray="3 2"/>`;}
+  if(extra){ s+=`<path d="${path(extra.pts)}" fill="none" stroke="${extra.color}" stroke-width="1.5" stroke-dasharray="5 3"/>`; }
+  s+=`<path d="${path(raw)}" fill="none" stroke="#999" stroke-width="1.5"/>`;
+  s+=`<path d="${path(after)}" fill="none" stroke="#06c" stroke-width="2"/>`;
+  s+=`<text x="${W-78}" y="13" font-size="9" fill="#999">raw(before)</text>`;
+  s+=`<text x="${W-78}" y="24" font-size="9" fill="#06c">after</text>`;
+  if(extra){ s+=`<text x="${W-78}" y="35" font-size="9" fill="${extra.color}">${extra.label}</text>`; }
+  svg.innerHTML=s;
+  svg._sx={xmin,xmax,padL,padR,W};
+  svg._geo={xmin,xmax,padL,padR,W,padT,yb:H-padB};   // 供 updateCursor 只移游標不重畫
+  svg.onclick=ev=>{                         // 點曲線 → 定位到該天的幀
+    const r=svg.getBoundingClientRect();
+    const {xmin,xmax,padL,padR,W}=svg._sx;
+    const px=(ev.clientX-r.left)*(W/r.width);
+    const daf=Math.round(xmin+(xmax===xmin?0:(px-padL)/(W-padL-padR)*(xmax-xmin)));
+    jumpToDaf(daf);
+  };
+}
+
+function jumpToDaf(daf){                     // 跳到該 daf、優先正午代表幀
+  const cand=frames.map((f,k)=>({k,h:f.hour})).filter((o,i)=>frames[o.k].daf===daf);
+  if(cand.length){ cand.sort((a,b)=>Math.abs(a.h-12)-Math.abs(b.h-12)); showFrame(cand[0].k); return; }
+  let best=0,bd=1e9; frames.forEach((f,k)=>{const d=Math.abs(f.daf-daf);if(d<bd){bd=d;best=k;}}); showFrame(best);
+}
+
+const imgCache={};
+function urlFor(fr){ return '/img?id='+encodeURIComponent(PID)+'&stem='+encodeURIComponent(fr.stem); }
+function preload(i){ const fr=frames[i]; if(!fr) return; const u=urlFor(fr);
+  if(!imgCache[u]){ const im=new Image(); im.src=u; imgCache[u]=im; } }
+
+// Andrew monotone chain：kept 葉頂點 → 凸包（與 pipeline solidity 分母一致）
+function convexHull(pts){
+  if(pts.length<3) return pts.slice();
+  const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[]; for(const q of p){ while(lo.length>=2 && cross(lo[lo.length-2],lo[lo.length-1],q)<=0) lo.pop(); lo.push(q); }
+  const up=[]; for(let i=p.length-1;i>=0;i--){ const q=p[i]; while(up.length>=2 && cross(up[up.length-2],up[up.length-1],q)<=0) up.pop(); up.push(q); }
+  lo.pop(); up.pop(); return lo.concat(up);
+}
+// 多邊形面積 (shoelace)；對凸包等同 cv2.contourArea，與 pipeline hull_area 一致
+function polyArea(pts){ let a=0; for(let i=0,n=pts.length;i<n;i++){ const p=pts[i],q=pts[(i+1)%n]; a+=p[0]*q[1]-q[0]*p[1]; } return Math.abs(a)/2; }
+
+function renderOverlay(fr){
+  const ov=$('#overlay'); const c=DATA.ref_circle;
+  let s=`<circle cx="${c[0]}" cy="${c[1]}" r="${c[2]}" fill="none" stroke="#fd0" stroke-width="2"/>`;
+  for(const lf of fr.leaves){
+    const e=eff(lf.tid); const cls=(e===1?'keep':'reject')+((lf.tid in OV)?' ov':'')+(isCot(lf.tid)?' cot':'');
+    const pts=lf.points.map(p=>p.join(',')).join(' ');
+    s+=`<polygon class="${cls}" points="${pts}" data-tid="${lf.tid}"></polygon>`;
+    s+=`<line x1="${lf.base[0]}" y1="${lf.base[1]}" x2="${lf.tip[0]}" y2="${lf.tip[1]}" stroke="#08f" stroke-width="1.5"/>`;
+    s+=`<circle cx="${lf.base[0]}" cy="${lf.base[1]}" r="3" fill="#08f"/>`;
+  }
+  // kept 葉的凸包紅虛線：toggle keep/reject 後隨 renderOverlay 即時重算
+  const kept=fr.leaves.filter(lf=>eff(lf.tid)===1 && lf.points.length>=3);
+  const allp=kept.flatMap(lf=>lf.points);
+  if(allp.length>=3){
+    const h=convexHull(allp);
+    if(h.length>=3) s+=`<polygon class="hull" points="${h.map(p=>p.join(',')).join(' ')}"></polygon>`;
+  }
+  ov.innerHTML=s;
+  ov.querySelectorAll('polygon').forEach(pg=>pg.onclick=e=>{
+    if(e.shiftKey) toggleCot(pg.dataset.tid); else toggleLeaf(pg.dataset.tid);
+  });
+}
+
+function showFrame(i){
+  curIdx=i; const fr=frames[i]; if(!fr) return;
+  $('#finfo').textContent=`${fr.date}  ${String(fr.hour).padStart(2,'0')}:00  (DAF ${fr.daf})  frame ${i+1}/${frames.length}  leaves ${fr.leaves.length}`;
+  updateCursor();                          // 換幀只移游標；資料變動時由呼叫端另呼 drawCurves()
+  // 影像載入完成後才換圖+畫 overlay → polygon 永不疊在舊/空白影像上 (消除標記錯覺)
+  const u=urlFor(fr);
+  let im=imgCache[u]; if(!im){ im=new Image(); im.src=u; imgCache[u]=im; }
+  const apply=()=>{ if(curIdx!==i) return; $('#frameImg').src=u; renderOverlay(fr); };
+  if(im.complete && im.naturalWidth) apply();
+  else im.addEventListener('load', apply, {once:true});
+  for(let k=1;k<=3;k++){ preload(i+k); preload(i-k); }   // 預載鄰幀，scrub 即時
+}
+
+let afterTimer=null;
+async function toggleLeaf(tid){
+  const newState = eff(tid)===1 ? 0 : 1;
+  // 若回到 auto 值就清除 override，否則設定
+  if(newState === (autoKeep[tid]?1:0)) { delete OV[tid]; postOv(tid,-1); }
+  else { OV[tid]=newState; postOv(tid,newState); }
+  showFrame(curIdx); drawCurves();      // count_after 立即
+  clearTimeout(afterTimer);
+  afterTimer=setTimeout(async()=>{ await refreshAfter(); drawCurves(); }, 250);  // area_after debounce (只重算被改的那天)
+}
+function postOv(tid,state){ fetch('/api/override',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:PID,tid,state})}); }
+
+async function toggleCot(tid){            // Shift+點葉：標/取消子葉（不動 keep/reject）
+  const klass = isCot(tid) ? '' : 'cotyledon';
+  if(klass) CLS[tid]='cotyledon'; else delete CLS[tid];
+  postCls(tid,klass); updateCotInfo();
+  if(dapdOn()) await refreshAfter();      // DAPD 預覽開啟 → 重算去子葉面積
+  showFrame(curIdx); drawCurves();
+}
+function postCls(tid,klass){ fetch('/api/class',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:PID,tid,klass})}); }
+
+function jumpDay(dir){
+  const d=frames[curIdx].daf; let i=curIdx;
+  while(i+dir>=0 && i+dir<frames.length && frames[i+dir].daf===d) i+=dir;
+  if(i+dir>=0 && i+dir<frames.length) showFrame(i+dir);
+}
+// 逐日模式：以每日代表幀為步進單位
+function stepDay(dir){
+  if(!dayReps.length) return;
+  const d=frames[curIdx].daf;
+  let pos=dayReps.findIndex(k=>frames[k].daf===d);
+  if(pos<0){ let bd=1e9; dayReps.forEach((k,i)=>{const dd=Math.abs(frames[k].daf-d);if(dd<bd){bd=dd;pos=i;}}); }
+  const np=pos+dir;
+  if(np>=0 && np<dayReps.length) showFrame(dayReps[np]);
+}
+$('#reviewBtn').onclick=async()=>{
+  const el=document.querySelector('.plant.sel'); const now=!(el&&el.classList.contains('rev'));
+  await fetch('/api/reviewed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:PID,reviewed:now})});
+  if(el) el.classList.toggle('rev',now); $('#revState').textContent=now?'（已審查）':'';
+  updateRollup();
+};
+$('#cotDoneBtn').onclick=async()=>{
+  const el=document.querySelector('.plant.sel'); const now=!(el&&el.classList.contains('cot_done'));
+  await fetch('/api/cotyledon_done',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:PID,done:now})});
+  if(el) el.classList.toggle('cot_done',now); $('#cotDoneState').textContent=now?'（已標）':'';
+  updateRollup();
+};
+$('#dapdChk').addEventListener('change',async()=>{ if(!PID) return; await refreshAfter(); drawCurves(); });
+$('#modeChk').addEventListener('change',()=>{
+  MODE = $('#modeChk').checked ? 'day' : 'hour';
+  if(dayMode() && frames.length){             // 切回逐日 → 目前幀吸附到當天代表幀
+    const d=frames[curIdx].daf; const rep=dayReps.find(k=>frames[k].daf===d);
+    if(rep!=null) curIdx=rep;
+  }
+  drawCurves();                               // 點集(逐日/逐時)改變 → 整張重畫一次
+  if(frames.length) showFrame(curIdx);        // 換圖/overlay/游標
+});
+$('#noteBox').addEventListener('input',()=>setNoteState('未儲存','#c60'));
+$('#noteSave').onclick=()=>writeNote($('#noteBox').value);
+$('#noteClear').onclick=()=>{ if(!$('#noteBox').value.trim() || confirm('清除此植株的觀察註記？')){ $('#noteBox').value=''; writeNote(''); } };
+document.addEventListener('keydown',e=>{
+  if(['INPUT','TEXTAREA'].includes(e.target.tagName) || !frames.length) return;
+  if(dayMode()){                              // 逐日：a/d 與 w/s 都以天為單位
+    if(e.key==='d'||e.key==='w') stepDay(1);
+    else if(e.key==='a'||e.key==='s') stepDay(-1);
+  } else {
+    if(e.key==='d'){ if(curIdx<frames.length-1) showFrame(curIdx+1); }
+    else if(e.key==='a'){ if(curIdx>0) showFrame(curIdx-1); }
+    else if(e.key==='w'){ jumpDay(1); }
+    else if(e.key==='s'){ jumpDay(-1); }
+  }
+});
+let rzTimer=null;
+window.addEventListener('resize',()=>{ clearTimeout(rzTimer); rzTimer=setTimeout(()=>{ if(DATA) drawCurves(); },150); });
+loadTree();
+</script>
+</body>
+</html>
