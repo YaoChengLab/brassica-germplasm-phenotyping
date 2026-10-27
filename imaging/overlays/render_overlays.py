@@ -1,21 +1,24 @@
-"""離線烤「分割 + 歸屬」透明疊層 PNG（RGB overlay 診斷圖）。
+"""Render transparent segmentation and assignment overlays (RGBA PNG) for the single-plant images.
 
-設計（見 vault 規劃筆記 / 對話 2026-07-23）：
-  - 純讀現成 frames.json（polygon + M2 ownership），**不跑 YOLO、不重算**；跟 traits_2d 同性質的
-    離線一次性批次。烤好後 api 只服務靜態 PNG，serve 時零計算。
-  - 輸出是**透明 overlay**（RGBA，背景透明）——前端疊在原 crop 上，原圖不被覆蓋、可調透明度。
-  - 平行樹 OVERLAY_ROOT/<batch>/<cultivar>/<treatment>/rep-<n>/<stem>.png，與 RASPI_ROOT 同結構，
-    正本 raspi_RGB 保持乾淨。
-  - ownership 語意：綠=owned（keep=True，進生長曲線）、紅虛線=rejected（鄰株葉，被排除）。
-    base/tip 端點以小點標示（僅 owned 葉，供關鍵點檢視）。
-  - keep 來源：預設 auto（frames.json keep = M2）。`--effective` 併 qc.sqlite override
-    → 與 reviewed 批的生長曲線完全一致（一樣是離線讀檔，非重算）。
+  - Reads the existing frames.json (leaf polygons and the automatic keep decision); it does not
+    run the segmentation models or recompute anything. Like traits_2d it is an offline batch
+    step, so the platform only serves static PNG files.
+  - The output is a transparent overlay (RGBA, transparent background) that the web interface
+    draws over the original image, which stays untouched; its opacity can be adjusted.
+  - Output tree OVERLAY_ROOT/<batch>/<cultivar>/<treatment>/rep-<n>/<stem>.png mirrors RASPI_ROOT,
+    so the image tree itself stays clean.
+  - Colours: green = retained leaf (keep=True, enters the growth curves); red dashed outline =
+    rejected leaf (assigned to a neighbouring plant). Base and tip points are drawn as small dots
+    on retained leaves only.
+  - Keep decisions: the automatic ones from frames.json by default. `--effective` applies the
+    review decisions in qc.sqlite, so the overlays match the traits of reviewed plants (still
+    read from files, not recomputed).
 
-CLI：
-  python -m overlays.render_overlays --plant 2025B06/s0075/Control/rep-2   # 單株
-  python -m overlays.render_overlays --batch 2025B06                       # 整批
-  python -m overlays.render_overlays --batch 2025B06 --effective           # 併人工 override
-  加 --force 覆寫既有（預設 skip-existing，冪等可續跑）。
+Usage (from the repository root):
+  python imaging/overlays/render_overlays.py --plant 2025B08/s0123/Control/rep-3   # one plant
+  python imaging/overlays/render_overlays.py --batch 2025B08                       # whole batch
+  python imaging/overlays/render_overlays.py --batch 2025B08 --effective           # with review decisions
+  Add --force to overwrite existing files (by default existing files are skipped, so a rerun resumes).
 """
 from __future__ import annotations
 import argparse
@@ -30,16 +33,16 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import QC_DATA, QC_DB, OVERLAY_ROOT, require_batch_code  # noqa: E402
 
-CANVAS = 600                       # 裁切圖固定尺寸（ref_circle 對得上；overlay 用同座標系）
+CANVAS = 600                       # fixed size of the single-plant images (same coordinates as ref_circle)
 TS_RE = re.compile(r"(\d{12})")
 
-# 診斷配色（RGBA）
-KEEP_LINE = (46, 160, 44, 255)     # 綠：owned 外框（進曲線）
-KEEP_FILL = (46, 160, 44, 55)      # 綠半透明填色
-REJECT_LINE = (214, 39, 40, 235)   # 紅：rejected 外框（鄰株葉，虛線）
-BASE_DOT = (31, 119, 180, 255)     # 藍：base 端點
-TIP_DOT = (255, 127, 14, 255)      # 橙：tip 端點
-DASH, GAP = 7, 5                   # 虛線段長 / 間隔（px）
+# Overlay colours (RGBA)
+KEEP_LINE = (46, 160, 44, 255)     # green: outline of retained leaves (enter the curves)
+KEEP_FILL = (46, 160, 44, 55)      # green, translucent fill
+REJECT_LINE = (214, 39, 40, 235)   # red: dashed outline of rejected leaves (neighbouring plant)
+BASE_DOT = (31, 119, 180, 255)     # blue: base point
+TIP_DOT = (255, 127, 14, 255)      # orange: tip point
+DASH, GAP = 7, 5                   # dash length / gap (px)
 
 
 def _ipts(points):
@@ -47,11 +50,11 @@ def _ipts(points):
 
 
 def _dashed_polygon(draw: ImageDraw.ImageDraw, pts, color, width=2):
-    """PIL 無原生虛線 → 沿封閉多邊形逐段畫虛線。"""
+    """PIL has no dashed lines, so draw the dashes segment by segment along the closed polygon."""
     if len(pts) < 2:
         return
     ring = pts + [pts[0]]
-    carry = 0.0                    # 跨線段延續的 dash 相位
+    carry = 0.0                    # dash phase carried across segments
     for (x0, y0), (x1, y1) in zip(ring, ring[1:]):
         seg = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
         if seg == 0:
@@ -68,7 +71,7 @@ def _dashed_polygon(draw: ImageDraw.ImageDraw, pts, color, width=2):
 
 
 def _load_overrides(bkey: str) -> dict:
-    """qc.sqlite leaf_override：{tid: state}，key = underscore business key（re-key 後）。"""
+    """leaf_override rows of qc.sqlite as {tid: state}; plant key = batch_cultivar_treatment_rep."""
     try:
         c = sqlite3.connect(QC_DB)
         try:
@@ -88,7 +91,7 @@ def _keep(leaf: dict, ov: dict) -> bool:
 
 
 def render_frame(leaves, ov) -> Image.Image:
-    """單幀 → 透明 RGBA overlay。先畫 reject（底），再畫 keep（上），最後端點。"""
+    """One image -> transparent RGBA overlay: rejected leaves first (bottom), then retained leaves, then points."""
     img = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     dr = ImageDraw.Draw(img)
     kept = []
@@ -104,7 +107,7 @@ def render_frame(leaves, ov) -> Image.Image:
     for lv, ip in kept:
         dr.polygon(ip, fill=KEEP_FILL)
         dr.line(ip + [ip[0]], fill=KEEP_LINE, width=2)
-    for lv, ip in kept:                       # 端點畫在最上層、僅 owned 葉
+    for lv, ip in kept:                       # points on top, retained leaves only
         for pt, col in ((lv.get("base"), BASE_DOT), (lv.get("tip"), TIP_DOT)):
             if pt:
                 x, y = int(round(pt[0])), int(round(pt[1]))
@@ -113,7 +116,7 @@ def render_frame(leaves, ov) -> Image.Image:
 
 
 def render_plant(rel: str, effective: bool, force: bool) -> tuple[int, int]:
-    """回傳 (寫出幀數, 略過幀數)。"""
+    """Return (images written, images skipped)."""
     fjp = Path(QC_DATA) / rel / "frames.json"
     if not fjp.is_file():
         print(f"[overlay] no frames.json: {rel}", file=sys.stderr)
@@ -143,7 +146,7 @@ def render_plant(rel: str, effective: bool, force: bool) -> tuple[int, int]:
 
 
 def find_plants(batch: str) -> list[str]:
-    """batch 下所有 plant 的 rel（相對 QC_DATA）。batch 須為 canonical 批號（2025B06）。"""
+    """rel paths (relative to QC_DATA) of all plants in a batch; batch must be a full code (2025B08)."""
     root = Path(QC_DATA)
     bdir = root / require_batch_code(batch)
     if not bdir.is_dir():
@@ -154,12 +157,12 @@ def find_plants(batch: str) -> list[str]:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="離線烤分割+歸屬透明 overlay PNG（純讀 frames.json）")
+    ap = argparse.ArgumentParser(description="Render transparent segmentation and assignment overlays from frames.json")
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--plant", help="單株 rel，如 2025B06/s0075/Control/rep-2")
-    g.add_argument("--batch", help="整批，完整批號如 2025B06（不接受短名 B06）")
-    ap.add_argument("--effective", action="store_true", help="併 qc.sqlite override（reviewed 批對齊曲線）")
-    ap.add_argument("--force", action="store_true", help="覆寫既有（預設 skip-existing）")
+    g.add_argument("--plant", help="one plant, e.g. 2025B08/s0123/Control/rep-3")
+    g.add_argument("--batch", help="a whole batch, full batch code e.g. 2025B08 (not B08)")
+    ap.add_argument("--effective", action="store_true", help="apply the review decisions in qc.sqlite")
+    ap.add_argument("--force", action="store_true", help="overwrite existing files (default: skip them)")
     a = ap.parse_args()
     if a.batch:
         try:

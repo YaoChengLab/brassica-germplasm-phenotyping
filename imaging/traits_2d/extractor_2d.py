@@ -1,11 +1,9 @@
-"""extractor_2d.py — VENDORED 2D trait extractor (pipeline integration S2).
+"""extractor_2d.py — copied 2D trait extractor.
 
-DO NOT edit here for feature changes. This is a version-pinned copy so the
-production engine does not dynamically import a mutable working-dir path.
+A fixed copy of the trait extractor of the internal image-to-CSV pipeline (not released),
+so trait extraction does not depend on a working copy that may change.
 
-Source : trait extractor of the internal image-to-CSV pipeline (not released)
-Vendored: 2026-07-13
-SHA256(first16): cde3c48565e45a96
+Source SHA256(first16): cde3c48565e45a96
 Provides: PlantTraitExtractor2D (static methods extract_morphological /
           extract_color / extract_texture / extract_custom).
 """
@@ -275,7 +273,7 @@ class PlantTraitExtractor2D:
                 # independent: r=0.26 vs equivalent_diameter) and min (nearest-point /
                 # concavity, r=0.48, uncorrelated with max). Dropped max/mean/median —
                 # they are ~size duplicates (mean≈median r=0.99; all r=0.8–0.94 with
-                # equivalent_diameter) already covered by existing size traits. (2026-07-06)
+                # equivalent_diameter) already covered by existing size traits.
                 traits['std_radius_from_centroid'] = std_radius
                 traits['min_radius_from_centroid'] = np.min(radii)
         return traits
@@ -428,7 +426,6 @@ class PlantTraitExtractor2D:
     def extract_color(image: np.ndarray, mask: np.ndarray) -> Dict[str, float]:
         """
         Extract color traits from plant region.
-        Traits based on verified entries from 2D性狀整理.md.
 
         Args:
             image: Input image (BGR)
@@ -599,9 +596,8 @@ class PlantTraitExtractor2D:
 
         # Colour Distribution Modes (Index 35): number of "mean + 2*std" modes summed
         # over the R, G, B channel histograms. Faithful to saric2025 "RGB colour
-        # distribution" (retains chromaticity). 2026-07-06 fixed from a single
-        # mean(R,G,B) intensity histogram, which discarded colour and reduced this to
-        # a brightness measure (route A alignment to literature).
+        # distribution" (retains chromaticity). A single mean(R,G,B) intensity
+        # histogram would discard colour and reduce this to a brightness measure.
         cdm = 0
         for _ch in range(3):  # plant_pixels_rgb is in R, G, B order
             _ch_hist, _ = np.histogram(plant_pixels_rgb[:, _ch], bins=256, range=(0, 255))
@@ -650,7 +646,6 @@ class PlantTraitExtractor2D:
 
         Fixes background dilution: feeding a whole bbox (background=0) into
         graycomatrix makes the (0,0) background pairs dominate every feature.
-        See note 2D影像性狀提取實作規格 / 2D性狀整理「GLCM 計算約定」.
         """
         m = patch_mask.astype(bool)
         q = patch_q.astype(np.int64)
@@ -685,7 +680,6 @@ class PlantTraitExtractor2D:
         Extract texture traits from plant region.
         Includes GLCM features (Haralick 1973), pixel entropy, HoG, LoG,
         and spectral distribution modes.
-        Traits based on verified entries from 2D性狀整理.md.
 
         Args:
             image: Input image (BGR)

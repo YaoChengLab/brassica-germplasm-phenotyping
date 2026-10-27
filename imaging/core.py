@@ -1,11 +1,11 @@
-"""core.py — leaf-canopy-qc 自包含核心 (vendor-copy 自已驗證的 production 邏輯)。
+"""core.py — self-contained core of the imaging workflow.
 
-不 runtime import 任何 whose_leaves_pipe / conf_pilot 腳本。只引用：
-  - vendor/ 內複製的 keypoint model toolchain (stage8_*)
-  - 外部訓練好的權重檔 (放在 WEIGHTS_DIR，見 *_W 常數)
+Depends only on:
+  - the keypoint model code copied into vendor/ (stage8_*)
+  - the trained model weights in WEIGHTS_DIR (see the *_W constants)
 
-涵蓋：3 模型 adaptive routing、conf 派生、v8 keypoint ownership、13-hr 軌跡投票、union area。
-邏輯與 inference_adaptive.py / run_v8_all_hours.py 等價 (逐函式複製)。
+Covers: adaptive routing between three segmentation models, confidence filtering, keypoint-based
+leaf-to-plant assignment, daily trajectory voting across the hourly images, and union area.
 """
 from __future__ import annotations
 
@@ -20,20 +20,20 @@ import cv2
 import numpy as np
 import torch
 
-# ---- 路徑：唯一定義在 config.py（環境變數優先，否則取 repo 相對位置）----
+# ---- Paths: defined only in config.py (environment variable first, else a repository path) ----
 from config import CODE_ROOT, QC_ROOT, QC_DATA as DATA_ROOT, QC_DB as SQLITE_PATH, \
     RASPI_ROOT, WEIGHTS_DIR as WEIGHTS  # noqa: E402
 
-# 四個權重放同一個目錄
-USER_W = WEIGHTS / "run_v11m_640_s1_v3_best.pt"
+# The four weights share one directory
+USER_W = WEIGHTS / "brassicaceae_leaf_seg.pt"
 BASE_W = WEIGHTS / "genyolo_leaf_yolov11m.pt"
-TRAIN31_W = WEIGHTS / "yolov8mseg_train31.pt"
-KP_W = WEIGHTS / "stage8_keypoint_v8.pth"
+TRAIN31_W = WEIGHTS / "brassicaceae_lobed_leaf_seg.pt"
+KP_W = WEIGHTS / "brassicaceae_leaf_keypoint.pth"
 
 # vendor toolchain on path (modules import each other by bare name)
 sys.path.insert(0, str(CODE_ROOT / "vendor"))
 
-# ---- 常數 (= production) ----
+# ---- Constants ----
 CX, CY, R = 300, 300, 150          # adaptive routing circle
 NMS_IOU = 0.5
 IMGSZ = 640
@@ -112,7 +112,7 @@ def get_cultivar_id(path: Path) -> str:
 
 # ───────── plant enumeration ─────────
 def all_plants(batch: str | None = None):
-    """RASPI_ROOT 下的植株目錄 <batch>/<cultivar>/<treatment>/rep-<n> → [(tag, rel)]。"""
+    """Plant directories <batch>/<cultivar>/<treatment>/rep-<n> under RASPI_ROOT -> [(tag, rel)]."""
     pattern = f"{batch}/s*/*/rep-*" if batch else "20[0-9][0-9]B*/s*/*/rep-*"
     out = []
     for pdir in sorted(RASPI_ROOT.glob(pattern)):
@@ -150,7 +150,7 @@ def dets_from_result(r, model_name):
 
 
 def infer_frame(img, cultivar, models, conf):
-    """3 模型 adaptive 的 raw dets (pre-routing；含 model 標記與 conf)。"""
+    """Raw detections of the adaptive three-model setup, before routing (with model label and conf)."""
     if cultivar in SPECIAL_CULTIVARS:
         r = models["train31"](img, conf=conf, imgsz=IMGSZ, verbose=False)[0]
         return dets_from_result(r, "TRAIN31")
@@ -160,7 +160,7 @@ def infer_frame(img, cultivar, models, conf):
 
 
 def derive_version(dets, conf_thr, cultivar):
-    """忠實重現 adaptive_route：conf 過濾各模型 → in/out-circle routing → NMS。"""
+    """Adaptive routing: confidence filter per model -> inside/outside-circle routing -> NMS."""
     arrs = [(np.asarray(d["points"], np.float32), d["conf"], d["model"]) for d in dets]
     if cultivar in SPECIAL_CULTIVARS:
         return [(p, "TRAIN31") for p, c, m in arrs if m == "TRAIN31" and c >= conf_thr]
@@ -177,7 +177,7 @@ def derive_version(dets, conf_thr, cultivar):
     return list(zip(kp, kl))
 
 
-# ───────── v8 keypoint ownership ─────────
+# ───────── keypoint-based leaf-to-plant assignment ─────────
 from stage8_keypoint_v5 import (          # noqa: E402  (vendored)
     PAD_FIXED, coords_crop_to_full, compute_crop_bbox_v5, dynamic_resize,
 )
@@ -234,7 +234,7 @@ def ray_through_circle(tip, base, circle=REF_CIRCLE) -> bool:
 
 
 def build_trajectories(recs, match_radius=MATCH_RADIUS):
-    """Greedy nearest-centroid matching across hours within one day (= production)."""
+    """Greedy nearest-centroid matching across hours within one day."""
     by_hour = defaultdict(list)
     for i, r in enumerate(recs):
         by_hour[r["hour"]].append(i)
@@ -263,7 +263,7 @@ def build_trajectories(recs, match_radius=MATCH_RADIUS):
 
 
 def vote_daily_decision(traj_recs):
-    """(decision True/False/None, n_pass, n_total). 非 abstain 幀多數決。"""
+    """(decision True/False/None, n_pass, n_total): majority vote over the non-abstaining images."""
     voting = [r for r in traj_recs if not r["abstain"]]
     n = len(voting)
     if n == 0:

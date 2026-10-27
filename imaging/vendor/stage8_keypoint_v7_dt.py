@@ -1,11 +1,13 @@
 """v7-dt: distance transform polygon channel.
 
-唯一 vs v6 差別：4th input channel 從 binary polygon mask 改為 distance transform
-(normalized to [0,1])。其餘 (Architecture / Loss / Decode / Augmentation) 全部繼承。
+The only difference from stage8_keypoint_v6_heatmap: the 4th input channel is a distance
+transform (normalised to [0,1]) instead of the binary polygon mask. Architecture, loss,
+decoding and augmentation are inherited unchanged.
 
-動機：binary mask 對 polygon 邊界噪音敏感（遮擋葉、邊緣切割葉、破碎 mask 都污染訊號）；
-distance transform 在 polygon 核心區域強、邊緣弱，對 boundary noise 健壯，
-峰值 ridge 近似葉脈軸（人類判讀依據）。
+Why: a binary mask is sensitive to noise on the polygon boundary (occluded leaves, leaves cut
+at the image edge, fragmented masks). A distance transform is strong in the core of the polygon
+and weak at its edge, so it is robust to boundary noise, and its ridge approximates the midrib,
+which is what a person reads to place base and tip.
 """
 from __future__ import annotations
 
@@ -32,10 +34,10 @@ def render_polygon_distance_transform(polygon_crop_coords: np.ndarray,
     """Replacement for v5/v6's render_polygon_mask.
 
     Returns normalized distance transform ∈ [0, 1]:
-      - polygon 邊上的點: 0
-      - polygon 內: 與最近邊界距離 / max(distance)
-      - polygon 外: 0
-    Resize 到 target (INTER_LINEAR 因為 float)。
+      - on the polygon boundary: 0
+      - inside the polygon: distance to the nearest boundary / max(distance)
+      - outside the polygon: 0
+    Resized to target with INTER_LINEAR (the values are floats).
     """
     h, w = crop_hw
     mask = np.zeros((h, w), dtype=np.uint8)
@@ -49,7 +51,7 @@ def render_polygon_distance_transform(polygon_crop_coords: np.ndarray,
 
 
 class LeafDatasetV7DT(LeafDatasetV5):
-    """V5 dataset 加上 4th channel = distance transform 而非 binary mask。"""
+    """LeafDatasetV5 with a distance transform instead of the binary mask as the 4th channel."""
 
     def _make_sample(self, s: dict, pad_ratio: float
                       ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

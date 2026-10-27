@@ -1,0 +1,116 @@
+services:
+  # PostgreSQL Database
+  database:
+    build: ./database
+    container_name: bpp-database
+    environment:
+      POSTGRES_DB: plant_phenotyping
+      POSTGRES_USER: ${DB_USER:-phenouser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - bpp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-phenouser} -d plant_phenotyping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    build: ./redis
+    container_name: bpp-redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - bpp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # FastAPI Backend
+  api-service:
+    build: ./backend
+    container_name: bpp-api
+    env_file: .env
+    environment:
+      # Database Configuration
+      DATABASE_URL: postgresql://${DB_USER:-phenouser}:${DB_PASSWORD:?Set DB_PASSWORD in .env}@database:5432/plant_phenotyping
+      REDIS_URL: redis://redis:6379/0
+      # IP Whitelist: include Docker bridge so host can reach API via localhost
+      ALLOWED_IP_CIDRS: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16"
+      # Python Configuration
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: 1
+      # Environment mode — override via .env on prod (ENVIRONMENT=production DEBUG=false LOG_LEVEL=INFO)
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Data Directory Configuration
+      LOGS_DIR: ${LOGS_DIR:-/app/logs}
+      CSV_DATA_DIR: ${CSV_DATA_DIR:-/data/csv-import-v2}
+      # Application URLs
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+      # Operator recorded in provenance (no login; see .env.template)
+      BPP_OPERATOR: ${BPP_OPERATOR:-admin}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/logs:/app/logs
+      - ./data/csv-import-v2:/data/csv-import-v2:ro
+      - ./media:/app/static/media:ro # Mount for media files including images
+      # Single-plant crops shown in the plant viewer (<batch>/<accession>/<treatment>/rep-<n>/*.png)
+      - ${CROPS_DIR:-../demo/crops}:/app/crops:ro
+      # Segmentation/assignment overlays written by imaging/overlays/render_overlays.py
+      - ${OVERLAY_DIR:-../demo/raspi_RGB_overlay}:/app/crops_overlay:ro
+    networks:
+      - bpp-network
+    restart: unless-stopped
+    tty: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend React Application
+  frontend:
+    build: ./frontend
+    container_name: bpp-frontend
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      - api-service
+    volumes:
+      - ./media:/usr/share/nginx/html/media:ro # Mount for serving media files (includes img/ and uploads/)
+    networks:
+      - bpp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  bpp-network:
+    driver: bridge

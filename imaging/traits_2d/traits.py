@@ -1,18 +1,21 @@
-"""traits.py — 批次 QC-aware 2D 性狀提取引擎 (管線整合 S2, 路 B)。
+"""traits.py — batch 2D trait extraction that applies the leaf-to-plant assignment and review decisions.
 
-角色：把 qc_delta_prototype 的單株原型升級為「可吃 batch_code 的批跑 production 引擎」，
-產出對齊 DB trait_observations 的 staging CSV（只算 QC ownership、不寫 DB）。
+Writes a staging CSV whose columns match the database table trait_observations; it does not
+write to the database (platform/ingest/load.py does).
 
-設計要點（見 vault [[表型影像管線整合重構規劃]] 2026-07-13 節）：
-  - 純 CPU：柵格化既有 frames.json polygon，不跑 YOLO、不重裁（適用「既有已 QC 批次重灌」）。
-  - ownership = effective_keep（qc.sqlite override 有則用，否則 frames.json keep = M2 fallback）。
-  - leaf_count = len(effective 選中葉)（修正原型 union-mask connected-component 的葉數 bug）。
-  - 輸出 = per-frame 列：business key（partial，treatment 留 S3 由 DB 解析）+ provenance
-           + DB trait_observations 的全 trait 欄（COLUMN_MAP 對齊，單一真相源）。
-  - 只產 staging CSV 落 out/（gitignore）；per-batch upsert 進 DB 是 S3。
+  - CPU only: rasterises the leaf polygons in the existing frames.json; it does not run the
+    segmentation models or re-crop the images.
+  - Assignment = effective_keep: the review decision in qc.sqlite where one exists, otherwise
+    the automatic keep decision in frames.json.
+  - leaf_count = number of retained leaves (not connected components of the union mask, which
+    merges touching leaves).
+  - Output: one row per image with the plant key (treatment is resolved from the database at
+    load time), provenance columns and every trait column of trait_observations (COLUMN_MAP
+    below is the single mapping).
+  - The staging CSV goes to out/ (not tracked by git).
 
-用法：
-  conda run -n pheno python -m traits_2d.traits --batch 2025B08 [--limit-plants N] [--limit-frames N]
+Usage (from the repository root):
+  python imaging/traits_2d/traits.py --batch 2025B08 [--limit-plants N] [--limit-frames N]
 """
 from __future__ import annotations
 import argparse
@@ -31,26 +34,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import QC_DB, QC_DATA, OUT, RASPI_ROOT, require_batch_code  # noqa: E402
 from traits_2d.extractor_2d import PlantTraitExtractor2D as E  # noqa: E402
 
-# ---- 常數 ----
-RASPI = Path(RASPI_ROOT)           # 乾淨 crop 正本（core.py 同源）
+# ---- Constants ----
+RASPI = Path(RASPI_ROOT)           # single-plant images (same root as core.py)
 CANVAS = 600
-MIN_AREA = 3                       # 與 qc_delta_prototype / b08_full_trait_extract 一致的 contour 門檻
+MIN_AREA = 3                       # minimum contour area passed to the extractor
 PIPELINE_VERSION = "traits_2d@2026-07-13"
 TS_RE = re.compile(r"(\d{12})")
 
-# ---- business key / provenance 欄（staging 前綴）----
+# ---- Plant key and provenance columns (staging prefix) ----
 KEY_COLS = [
-    "batch_code", "cultivar_code", "replicate_code", "plant_type",   # business key（缺 treatment_code）
-    "sensor_code", "observation_timestamp", "day_after_sewing",       # 定位 / 對應
+    "batch_code", "cultivar_code", "replicate_code", "plant_type",   # plant key (without treatment_code)
+    "sensor_code", "observation_timestamp", "day_after_sewing",       # position and time
 ]
 PROV_COLS = ["qc_status", "pipeline_version", "run_at", "old_plant_id", "frame_stem"]
 
-# ---- DB trait_observations 的 trait 欄（扣掉 id/plant_id/sensor_id/
-#      observation_timestamp/day_after_sewing/image_file 這 6 個 key 欄與 4 個
-#      provenance 欄；順序即 DB 順序）----
-#      mer_angle（原 Morph #23，方向角旋轉相依=非穩定性狀）已於 2026-07-27 移除，
-#      對齊抽取器與 registry；DB 欄位本身尚未 DROP，drift-guard 會列為
-#      「DB 有、worker 未填」的 deprecated 欄，不影響 upsert。
+# ---- Trait columns of trait_observations (excluding the 6 key columns id, plant_id,
+#      sensor_id, observation_timestamp, day_after_sewing, image_file and the 4 provenance
+#      columns; listed in table order) ----
+#      mer_angle (orientation angle, which depends on how the plant is rotated, so not a
+#      stable trait) is no longer produced. The database column still exists and stays empty.
 DB_TRAIT_COLS = [
     "leaf_count", "leaf_area", "area_pixels", "bounding_box_area", "perimeter_pixels",
     "convex_hull_area_pixels", "convex_hull_perimeter", "extent", "plant_height", "plant_width",
@@ -78,24 +80,20 @@ DB_TRAIT_COLS = [
     "hog_mean", "hog_std", "log_mean", "log_std",
 ]
 
-# ---- COLUMN_MAP（extractor 輸出名 → DB 欄）D4 對照，單一真相源 ----
-# 由實跑 extractor dump 校準（2026-07-13）：extractor 實際輸出 104 key，其中僅
-# boundary_method 非 DB 欄被丟；DB 107 trait 欄有 5 欄非 extractor 直出，分三類處理：
-COMPUTED_COLS = {"leaf_count"}           # 本引擎算 effective 選中葉數，extractor 不產
-ALIAS_COLS = {"leaf_area": "area_pixels"}  # extractor 不產 leaf_area；舊 DB leaf_area==area_pixels，
-                                           # 且消費端 batch_correction_service 讀 leaf_area → 以 area_pixels 填
-NULL_COLS: set = set()                   # 目前沒有「DB 有欄但 extractor 不產」的欄位
-# 2026-08-17 兩支 migration 把這一類欄位清乾淨了，故本集合為空：
-#   012  compactness／roundness／gap_fraction_canopy_porosity（343,809 列全 NULL）
-#   013  max_／mean_／median_radius_from_centroid（抽取器 2026-07-07 起不產；
-#        僅 20 列有值且全在 qc_status='no' 的 legacy 髒列）
-# 若日後又出現「DB 有欄、extractor 不產」的欄位，加回這裡即可。
-# 其餘 DB trait 欄一律以「同名」向 extractor 取值（1:1）。
+# ---- COLUMN_MAP (extractor output name -> database column), the single mapping ----
+# Of the extractor's output keys only boundary_method has no database column and is dropped.
+# Database trait columns not produced directly by the extractor fall into three groups:
+COMPUTED_COLS = {"leaf_count"}           # number of retained leaves, computed here
+ALIAS_COLS = {"leaf_area": "area_pixels"}  # the extractor has no leaf_area; leaf_area holds the
+                                           # same value as area_pixels
+NULL_COLS: set = set()                   # database columns the extractor does not produce (none at present)
+# Add a column here if the table ever gains one the extractor does not produce.
+# Every other trait column takes the extractor value of the same name.
 
 
 def load_overrides(key: str) -> dict:
-    """qc.sqlite leaf_override：{tid: state(1 keep / 0 reject)}，key = underscore business key
-    （Phase 2 re-key 後 qc.sqlite 的 plant_id，見 rekey/apply_rekey.py）。"""
+    """leaf_override rows of qc.sqlite as {tid: state (1 keep / 0 reject)};
+    key = batch_cultivar_treatment_rep, the plant_id used in qc.sqlite."""
     c = sqlite3.connect(QC_DB)
     try:
         return {tid: state for tid, state in
@@ -107,7 +105,7 @@ def load_overrides(key: str) -> dict:
 
 
 def is_reviewed(key: str) -> bool:
-    """plant-level 人工審查證據 → qc_status。key = underscore business key。無證據 / 查詢失敗回 False。"""
+    """Whether the plant has been marked reviewed (sets qc_status). False if not, or if the lookup fails."""
     try:
         c = sqlite3.connect(QC_DB)
         try:
@@ -136,7 +134,7 @@ def build_mask(leaves) -> np.ndarray:
 
 
 def extract_raw_traits(img: np.ndarray, mask: np.ndarray) -> dict:
-    """呼叫 vendored extractor 三 group，回傳 {trait_name: float}。空 mask 回 {}。"""
+    """Run the three extractor groups and return {trait_name: float}; {} for an empty mask."""
     if mask.sum() == 0:
         return {}
     cnts, _ = cv2.findContours((mask > 0).astype(np.uint8),
@@ -152,8 +150,8 @@ def extract_raw_traits(img: np.ndarray, mask: np.ndarray) -> dict:
 
 
 def to_db_row(raw: dict, n_leaves: int) -> dict:
-    """把 extractor 原始輸出 + 算得的 leaf_count → 對齊 DB_TRAIT_COLS（COLUMN_MAP）。
-    缺值 / NULL_COLS → ''（CSV 空 = SQL NULL）。"""
+    """Extractor output plus the computed leaf_count -> DB_TRAIT_COLS (via COLUMN_MAP).
+    Missing values and NULL_COLS -> '' (an empty CSV cell loads as SQL NULL)."""
     out = {}
     for col in DB_TRAIT_COLS:
         if col in COMPUTED_COLS:          # leaf_count
@@ -162,15 +160,15 @@ def to_db_row(raw: dict, n_leaves: int) -> dict:
         if col in NULL_COLS:
             out[col] = ""
             continue
-        src = ALIAS_COLS.get(col, col)    # leaf_area → area_pixels，其餘同名
+        src = ALIAS_COLS.get(col, col)    # leaf_area -> area_pixels, otherwise the same name
         v = raw.get(src, "")
         out[col] = "" if v == "" or (isinstance(v, float) and not np.isfinite(v)) else v
     return out
 
 
 def parse_rel(rel: str):
-    """rel = '2025B08/s0128/Control/rep-1' → (batch, cultivar, treatment, rep)。
-    Phase 3 rename 後結構 = <batch>/<cultivar>/<treatment>/rep-<n>。"""
+    """rel = '2025B08/s0128/Control/rep-1' -> (batch, cultivar, treatment, rep).
+    Layout: <batch>/<cultivar>/<treatment>/rep-<n>."""
     parts = rel.split("/")
     if len(parts) < 4:
         return "", "", "", ""
@@ -179,14 +177,15 @@ def parse_rel(rel: str):
 
 
 def business_key(rel: str) -> str:
-    """underscore business key ＝ qc.sqlite re-key 後的 plant_id（見 rekey/apply_rekey.py）。"""
+    """Plant key batch_cultivar_treatment_rep, the plant_id used in qc.sqlite."""
     b, c, t, rep = parse_rel(rel)
     return f"{b}_{c}_{t}_{rep}"
 
 
 def parse_business_key(rel: str) -> dict:
-    """rel → staging key 欄。treatment 已在路徑但不進 staging（S3 由 DB join 補，單 treatment 唯一）；
-    sensor_code / old_plant_id 已不在路徑 → 留空（純 provenance，sensor 由 resolver 查 DB chamberhistory）。"""
+    """rel -> staging key columns. Treatment is in the path but not written: the loader resolves it
+    from the database. sensor_code and old_plant_id stay empty; the loader finds the camera from
+    the plant's position record."""
     b, c, _t, rep = parse_rel(rel)
     return {
         "batch_code": b,
@@ -208,11 +207,11 @@ def ts_to_timestamp(stem: str):
 
 def process_plant(rel: str, limit_frames=None) -> list[dict]:
     fj = json.load(open(f"{QC_DATA}/{rel}/frames.json"))
-    bkey = business_key(rel)                    # qc.sqlite 查找鍵（re-key 後 = underscore business key）
+    bkey = business_key(rel)                    # lookup key in qc.sqlite
     ov = load_overrides(bkey)
     key = parse_business_key(rel)
-    # 3 態 qc_status（見 vault §2026-07-13(g)）：本引擎只產 verified/auto；
-    # `no` 保留給未經本引擎的舊 pre-QC 列（遷移時標記）。
+    # qc_status has three values; this step writes only verified or auto.
+    # `no` marks older rows that were not produced by this step.
     qc_status = "verified" if is_reviewed(bkey) else "auto"
     run_at = datetime.now().isoformat(timespec="seconds")
 
@@ -231,11 +230,11 @@ def process_plant(rel: str, limit_frames=None) -> list[dict]:
             continue
         eff = [lv for lv in fr["leaves"] if effective_keep(lv, ov)]
         n_leaves = len(eff)
-        raw = extract_raw_traits(img, build_mask(eff))   # 空 mask (n_leaves=0) → {}
+        raw = extract_raw_traits(img, build_mask(eff))   # empty mask (n_leaves=0) -> {}
         row = dict(key)
         row["observation_timestamp"] = ts_to_timestamp(stem)
-        # daf = 首圖後天數（curves 內部用），≠ DAS；此欄僅佔位，
-        # 真正的 day_after_sewing 由 ingest/load.py 以 DB 播種日覆蓋計算。
+        # daf = days since the plant's first image (used by the curves), not days after sowing;
+        # this is a placeholder, and ingest/load.py computes day_after_sewing from the sowing date.
         row["day_after_sewing"] = fr.get("daf", "")
         row["qc_status"] = qc_status
         row["pipeline_version"] = PIPELINE_VERSION
@@ -247,7 +246,7 @@ def process_plant(rel: str, limit_frames=None) -> list[dict]:
 
 
 def find_plants(batch: str) -> list[str]:
-    """回傳 batch 下所有 plant 的 rel（相對 QC_DATA）。batch 須為 canonical 批號（2025B08）。"""
+    """rel paths (relative to QC_DATA) of all plants in a batch; batch must be a full code (2025B08)."""
     root = Path(QC_DATA)
     bdir = root / require_batch_code(batch)
     if not bdir.is_dir():
@@ -259,7 +258,7 @@ def find_plants(batch: str) -> list[str]:
 
 
 def run(batch: str, limit_plants=None, limit_frames=None):
-    batch = require_batch_code(batch)      # staging 檔名以此為 key，須與 ingest 端同形
+    batch = require_batch_code(batch)      # the staging file name is keyed on it, as in the loader
     plants = find_plants(batch)
     if limit_plants:
         plants = plants[:limit_plants]
@@ -291,7 +290,7 @@ def run(batch: str, limit_plants=None, limit_frames=None):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--batch", required=True, help="完整批號，如 2025B08（不接受短名 B08）")
+    ap.add_argument("--batch", required=True, help="full batch code, e.g. 2025B08 (not B08)")
     ap.add_argument("--limit-plants", type=int)
     ap.add_argument("--limit-frames", type=int)
     a = ap.parse_args()

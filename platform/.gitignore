@@ -1,0 +1,73 @@
+# Environment variables (CRITICAL - never commit)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
+
+# Secrets and keys
+secrets.yaml
+*.key
+*.pem
+*.p12
+.vault*
+
+# Real Data
+data/
+media/
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Operating System
+Thumbs.db
+.DS_Store
+*.pid
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.pytest_cache/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Build artifacts
+dist/
+build/
+*.egg-info
+.next/
+out/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Docker
+.docker/
+
+# Database backups
+backup_v1.sql
+backup_*.sql
+*.sql.bak
+
+# Local Compose override (not version-controlled)
+docker-compose.override.yml

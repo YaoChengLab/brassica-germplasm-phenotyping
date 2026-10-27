@@ -1,19 +1,23 @@
-"""build.py — Phase 0: 對 raspi_RGB 植株跑 adaptive(conf) + v8 ownership，匯出 GUI 資料。
+"""build.py — leaf segmentation and leaf-to-plant assignment for single-plant images;
+writes the data read by the review tool.
 
-每株一次 pass：
-  per frame: adaptive infer @ conf → derive routed polys → 每 poly 跑 v8 keypoint
-             → abstain(peak<0.1) + passes(ray-circle)
-  per day:   build_trajectories → vote_daily_decision → 指派 tid=「date#idx」、標 keep
-  匯出 data/{rel}/:
-    frames.json  每幀 leaves[{tid, points, base, tip, keep}]  (GUI 可點 + 重算用快取)
-    curves.json  每日 {raw_count, raw_area, keep_count, keep_area, daf}  (before=raw, after-auto=keep)
+One pass per plant:
+  per image: adaptive segmentation at conf -> routed leaf polygons -> keypoint model on each
+             polygon -> abstain (heatmap peak < 0.1) and passes (ray-circle test)
+  per day:   build_trajectories -> vote_daily_decision -> track id tid = "date#idx", keep flag
+  output data/{rel}/:
+    frames.json  per image: leaves [{tid, points, base, tip, keep}] (clickable in the review
+                 tool and cached for recomputation), plus daily curves
+                 {raw_count, raw_area, keep_count, keep_area, daf} (before = raw, automatic = keep)
 
-frames.json 已含 base/tip/keep → 之後改 voting 參數或人工 override 都不必重跑 keypoint。
+frames.json already holds base, tip and keep, so changing the voting parameters or applying
+review decisions does not require running the keypoint model again.
 
-輸入 RASPI_ROOT/<batch>/<cultivar>/<treatment>/rep-<n>/*.png，輸出 QC_ROOT/data/ 下同一組四層路徑；
-路徑解析見 core.py。植株目錄沒有影像、或沒有任何檔名帶時間戳的影像時中止報錯。
+Input RASPI_ROOT/<batch>/<cultivar>/<treatment>/rep-<n>/*.png, output the same four-level path
+under QC_ROOT/data/; path resolution is in core.py. Stops with an error when a plant directory
+has no images or no image whose file name carries a timestamp.
 
-Usage (env=yolo):
+Usage (env bgp-imaging):
   python imaging/build.py --batch 2025B08
   python imaging/build.py --batch 2025B08 --cultivar s0123
   python imaging/build.py --all
@@ -90,7 +94,7 @@ def process_plant(rel, models, kp_model, device, conf, limit_frames=None):
                          f"({len(pngs)} .png files, none readable with a timestamp)")
     plant_day0 = min(d for d, _ in frame_meta.values())
 
-    # per-frame metrics (union_area 每幀算一次) + daily aggregate
+    # per-frame metrics (union_area once per image) + daily aggregate
     frames_out = []
     day_acc = defaultdict(lambda: {"rc": [], "ra": [], "kc": [], "ka": []})
     for stem in sorted(frame_polys):
@@ -169,8 +173,6 @@ def main():
         t0 = time.time()
         res = process_plant(rel, models, kp_model, device, args.conf, args.limit_frames)
         outdir.mkdir(parents=True, exist_ok=True)
-        json.dump({k: v for k, v in res.items() if k != "frames"},
-                  open(outdir / "curves.json", "w"))   # curves + meta
         json.dump(res, open(fj, "w"))                  # full (frames + curves)
         done += 1
         kc = res["curves"][-1]["keep_count"] if res["curves"] else 0

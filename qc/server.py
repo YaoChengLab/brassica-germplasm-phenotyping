@@ -1,23 +1,25 @@
-"""server.py — leaf-canopy-qc GUI 後端 (自包含；不 import core，避免拖 torch)。
+"""server.py — back end of the leaf-to-plant assignment review tool (self-contained; it does not
+import imaging/core.py, so it does not need torch).
 
-提供：
-  GET  /                          → gui/index.html
-  GET  /static/*                  → gui/ 靜態
-  GET  /api/tree                  → batch▸品系▸植株 樹 (掃 data/) + reviewed / cotyledon_done 標記
-  GET  /api/plant?id=<rel>        → frames.json (含 leaves + auto keep)
-  GET  /api/after?id=<rel>[&exclude_class=cotyledon]  → 套用 override 後每日 count_after/area_after；exclude_class 額外排除該語意類別（DAPD 去子葉）
-  GET  /img?id=<rel>&stem=<stem>  → 原始影像 (RASPI_ROOT)
-  GET  /api/overrides?id=<rel>    → {tid: state}
-  POST /api/override {id,tid,state}  state 1/0 = 人工設 keep/reject；state=-1 → 清除回 auto
-  GET  /api/classes?id=<rel>      → {tid: klass} 葉語意類別
-  POST /api/class {id,tid,klass}  klass='cotyledon' 標子葉；空字串 → 清除
+Endpoints:
+  GET  /                          -> gui/index.html
+  GET  /static/*                  -> static files in gui/
+  GET  /api/tree                  -> batch > accession > plant tree (scans data/) with reviewed / cotyledon_done flags
+  GET  /api/plant?id=<id>         -> frames.json (leaves and automatic keep decisions)
+  GET  /api/after?id=<id>[&exclude_class=cotyledon]  -> per-image count_after / area_after with review
+                                     decisions applied; exclude_class also leaves out leaves of that class
+  GET  /img?id=<id>&stem=<stem>   -> single-plant image (RASPI_ROOT)
+  GET  /api/overrides?id=<id>     -> {tid: state}
+  POST /api/override {id,tid,state}  state 1/0 = keep/reject set by the reviewer; -1 = clear (back to automatic)
+  GET  /api/classes?id=<id>       -> {tid: klass} leaf class
+  POST /api/class {id,tid,klass}  klass='cotyledon' marks a cotyledon; an empty string clears it
   POST /api/reviewed {id,reviewed}
-  POST /api/cotyledon_done {id,done}  植株子葉標記完成旗標
-  GET  /api/note?id=<rel>         → {text} 植株級觀察註記
-  POST /api/note {id,text}        text 空 → 刪除該株 note
-qc.sqlite: leaf_override(plant_id,tid,state) / leaf_class(plant_id,tid,klass) / reviewed(plant_id,ts) / cotyledon_done(plant_id,ts) / note(plant_id,text,ts)。
+  POST /api/cotyledon_done {id,done}  flag: cotyledon marking finished for the plant
+  GET  /api/note?id=<id>          -> {text} free-text note on the plant
+  POST /api/note {id,text}        an empty text deletes the note
+qc.sqlite: leaf_override(plant_id,tid,state) / leaf_class(plant_id,tid,klass) / reviewed(plant_id,ts) / cotyledon_done(plant_id,ts) / note(plant_id,text,ts).
 
-執行 (base env，需 fastapi+uvicorn+numpy，area 重算需 cv2)：
+Run (env bgp-imaging; needs fastapi, uvicorn and numpy):
   python qc/server.py --host 127.0.0.1 --port 8090
 """
 from __future__ import annotations
@@ -36,49 +38,40 @@ from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-IMG_CACHE = {}          # path str -> png bytes (in-RAM；warm 後 serve 走記憶體)
-IMG_CACHE_CAP = 2500    # ~10 株；超過丟最舊一批
-CURVES_CACHE = {}       # plant_id str -> list[day-dict] (curves.json 快取，無 override 快路徑)
-PLANT_CURVE_CACHE = {}  # (plant_id, exclude_class) -> list[day-dict]
-                        # 慢路徑結果快取；POST /api/override 或 /api/class 時對應植株失效
-
-
-def _invalidate_plant(plant_id: str):
-    for k in [k for k in PLANT_CURVE_CACHE if k[0] == plant_id]:
-        del PLANT_CURVE_CACHE[k]
-
-# QC_ROOT 預設 = server.py 自己所在目錄（repo 自包含：gui/ data/ qc.sqlite 都在其下），
-# 跨機零設定即可跑；env 仍可覆蓋。
+IMG_CACHE = {}          # path str -> png bytes (in RAM; after warm-up images are served from memory)
+IMG_CACHE_CAP = 2500    # about 10 plants; beyond this the oldest entries are dropped
+# QC_ROOT defaults to the directory of server.py (gui/, data/ and qc.sqlite all sit under it),
+# so it runs without configuration; the environment variable overrides it.
 QC_ROOT = Path(os.environ.get("QC_ROOT", Path(__file__).resolve().parent))
 DATA_ROOT = QC_ROOT / "data"
-# RASPI 影像位置：env 優先 → repo 內(NUC 部署) → sibling(Ubuntu 開發) 自動偵測。
+# Image location: RASPI_ROOT if set, else raspi_RGB/ inside QC_ROOT, else raspi_RGB/ next to QC_ROOT.
 _raspi_env = os.environ.get("RASPI_ROOT")
 RASPI_ROOT = (Path(_raspi_env) if _raspi_env
              else QC_ROOT / "raspi_RGB" if (QC_ROOT / "raspi_RGB").exists()
              else QC_ROOT.parent / "raspi_RGB")
-GUI = Path(__file__).resolve().parent / "gui"   # 介面跟著程式碼走，不隨 QC_ROOT 移動
+GUI = Path(__file__).resolve().parent / "gui"   # the interface stays with the code, not with QC_ROOT
 DB = QC_ROOT / "qc.sqlite"
 CANVAS = 600
 
 
-# 身分解耦（2026-07-21）：qc.sqlite plant_id ＝ underscore business key、與 FS 路徑脫鉤。
-# API 的 id 一律用 underscore key（對前端不透明）；只在存取檔案系統時轉回路徑。
-# 組成欄位（batch/cultivar/treatment/rep）皆無底線，故 split('_') 恰 4 段。
+# The plant_id in qc.sqlite is batch_cultivar_treatment_rep, independent of the file paths.
+# API ids always use this key (opaque to the front end); it is turned back into a path only to
+# read files. None of the four parts contains an underscore, so split('_') gives exactly 4 parts.
 def pid_of(path: str) -> str:
-    """FS 相對路徑 <batch>/<cultivar>/<treatment>/rep-<n> → qc.sqlite plant_id（underscore）。"""
+    """Relative path <batch>/<cultivar>/<treatment>/rep-<n> -> plant_id in qc.sqlite."""
     b, c, t, r = path.split("/")
     return f"{b}_{c}_{t}_{r[4:] if r.startswith('rep-') else r}"
 
 
 def path_of(pid: str) -> str:
-    """qc.sqlite plant_id（underscore）→ FS 相對路徑。"""
+    """plant_id in qc.sqlite -> relative path."""
     b, c, t, n = pid.split("_")
     return f"{b}/{c}/{t}/rep-{n}"
 
-_db_local = threading.local()   # thread-local 連線：重用而非每次開關
+_db_local = threading.local()   # thread-local connection, reused instead of reopened
 
 def db():
-    """每 thread 只開一次 SQLite 連線；CREATE TABLE IF NOT EXISTS 也只跑一次。"""
+    """One SQLite connection per thread; CREATE TABLE IF NOT EXISTS also runs only once."""
     if not getattr(_db_local, "conn", None):
         c = sqlite3.connect(str(DB), timeout=30, check_same_thread=False)
         c.execute("PRAGMA journal_mode=WAL")
@@ -92,10 +85,12 @@ def db():
 
 
 def union_area(polys, sz=CANVAS):
-    """numpy-vectorized scanline even-odd 多邊形 union 面積 (無 cv2/PIL，base env 可跑)。
+    """Union area of polygons by a numpy-vectorised even-odd scanline fill (no cv2 or PIL).
 
-    邊×掃描線交點向量化計算 (移除 per-edge python 內迴圈)，比逐點版快 ~數十倍。
-    before/after 都用這支 → 內部一致。
+    Known issue: this is not the rasterisation used by imaging/core.py and traits.py
+    (cv2.fillPoly), and it gives a few percent smaller areas for the same polygons. Days with
+    review decisions are recomputed here while other days keep the area cached by build.py,
+    so the review curve can drop on an edited day without any change in the plant.
     """
     if not polys:
         return 0
@@ -129,11 +124,6 @@ def index():
     return FileResponse(GUI / "index.html")
 
 
-@app.get("/curves")
-def curves():
-    return FileResponse(GUI / "cultivar_curves.html")
-
-
 @app.get("/api/tree")
 def tree():
     conn = db()
@@ -143,7 +133,7 @@ def tree():
     for fj in sorted(DATA_ROOT.glob("20[0-9][0-9]B*/s*/*/*/frames.json")):
         rel = fj.parent.relative_to(DATA_ROOT).as_posix()  # <batch>/<cultivar>/<treatment>/rep-<n>
         batch, cult, treat, rep = rel.split("/")
-        pid = pid_of(rel)   # qc.sqlite plant_id（underscore）；對前端不透明
+        pid = pid_of(rel)   # plant_id in qc.sqlite; opaque to the front end
         t[batch][cult].append({"plant": f"{treat}/{rep}", "id": pid,
                                "reviewed": pid in rev, "cotyledon_done": pid in cot})
     return JSONResponse(t)
@@ -165,14 +155,16 @@ def overrides(id: str):
 
 @app.get("/api/after")
 def after(id: str, exclude_class: str = ""):
-    """套用 override 後的每日 count_after / area。
+    """Per-image count_after / area_after with the review decisions applied.
 
-    exclude_class 非空 → 額外把該 leaf_class 的葉視為 reject（DAPD 用 'cotyledon' 排除子葉）。
-    keep/reject 真相不變，僅在輸出端 filter；故同一份 override 可導出「含子葉/不含子葉」兩份曲線。
+    A non-empty exclude_class also treats leaves of that class as rejected (e.g. 'cotyledon').
+    The keep/reject decisions themselves are unchanged; the class is only filtered on output, so
+    the same decisions give curves with and without cotyledons.
 
-    效能關鍵：count_after 永遠便宜計算；area_before 用 build 快取的 raw_area；
-    area_after 只對「被 override 或被排除類別影響的日期」用 scanline 重算 (一天 ~13 幀，~0.5s)，
-    其餘日期沿用 build 快取的 keep_area → 載入(無 override)即時、編輯只算被改的那天。
+    count_after is always cheap. area_after is recomputed with the scanline fill only for dates
+    touched by a review decision or an excluded class (about 13 images per day, ~0.5 s); other
+    dates keep the keep_area cached by build.py, so a plant without decisions loads at once and
+    an edit recomputes only the edited day. See union_area for the known area difference.
     """
     fj = DATA_ROOT / path_of(id) / "frames.json"
     if not fj.exists():
@@ -183,10 +175,10 @@ def after(id: str, exclude_class: str = ""):
     if exclude_class:
         excl = {t for (t,) in db().execute(
             "SELECT tid FROM leaf_class WHERE plant_id=? AND klass=?", (id, exclude_class)).fetchall()}
-    # tid = "YYYY-MM-DD#idx"；被排除的子葉所在日期也要重算 area（移除子葉後面積會變）
+    # tid = "YYYY-MM-DD#idx"; dates with excluded leaves are recomputed too (their area changes)
     affected = {tid.split("#")[0] for tid in ov} | {tid.split("#")[0] for tid in excl}
 
-    # 逐幀 count_after / area_after。area 只對受影響日期的幀重算，其餘沿用 build 快取。
+    # per-image count_after / area_after; area is recomputed only on affected dates, else cached
     out = []
     for fr in data["frames"]:
         keep = [lf for lf in fr["leaves"]
@@ -203,7 +195,7 @@ def _read_cached(p: Path):
         if not p.exists():
             return None
         b = p.read_bytes()
-        if len(IMG_CACHE) > IMG_CACHE_CAP:           # 粗 LRU：丟最舊 500
+        if len(IMG_CACHE) > IMG_CACHE_CAP:           # rough LRU: drop the oldest 500
             for k in list(IMG_CACHE)[:500]:
                 IMG_CACHE.pop(k, None)
         IMG_CACHE[key] = b
@@ -215,7 +207,7 @@ def img(id: str, stem: str):
     b = _read_cached(RASPI_ROOT / path_of(id) / f"{stem}.png")
     if b is None:
         return JSONResponse({"error": "no img"}, status_code=404)
-    # Cache-Control → 瀏覽器也快取，scrub 回看不再重抓
+    # Cache-Control lets the browser cache too, so scrubbing back does not refetch
     return Response(content=b, media_type="image/png",
                     headers={"Cache-Control": "public, max-age=86400"})
 
@@ -230,7 +222,7 @@ def _warm(id: str):
 
 @app.get("/api/warm")
 def warm(id: str):
-    """背景把該株所有幀讀進 RAM cache → 之後 serve 走記憶體 (避免 HDD 逐次 seek)。"""
+    """Read all images of the plant into the RAM cache in the background, so later requests avoid disk seeks."""
     threading.Thread(target=_warm, args=(id,), daemon=True).start()
     return {"ok": True}
 
@@ -251,13 +243,12 @@ def set_override(o: Ov):
                   "ON CONFLICT(plant_id,tid) DO UPDATE SET state=excluded.state",
                   (o.id, o.tid, o.state))
     c.commit()
-    _invalidate_plant(o.id)
     return {"ok": True}
 
 
 @app.get("/api/classes")
 def classes(id: str):
-    """該株所有葉的語意類別 {tid: klass}（無列=普通真葉）。"""
+    """Leaf classes of the plant as {tid: klass} (no row = ordinary true leaf)."""
     rows = db().execute("SELECT tid,klass FROM leaf_class WHERE plant_id=?", (id,)).fetchall()
     return JSONResponse({t: k for t, k in rows})
 
@@ -265,7 +256,7 @@ def classes(id: str):
 class Cls(BaseModel):
     id: str
     tid: str
-    klass: str   # 'cotyledon' 等；空字串 → 清除（回復為普通真葉）
+    klass: str   # e.g. 'cotyledon'; an empty string clears it (ordinary true leaf)
 
 
 @app.post("/api/class")
@@ -278,7 +269,6 @@ def set_class(c_: Cls):
     else:
         c.execute("DELETE FROM leaf_class WHERE plant_id=? AND tid=?", (c_.id, c_.tid))
     c.commit()
-    _invalidate_plant(c_.id)
     return {"ok": True}
 
 
@@ -314,85 +304,6 @@ def set_cotyledon_done(r: CotDone):
     return {"ok": True}
 
 
-@app.get("/api/cultivar_curves")
-def cultivar_curves(batch: str, cultivar: str, exclude_class: str = "cotyledon"):
-    """Per-day aggregated count/area for all replicates of a cultivar (with overrides + cotyledon filter).
-
-    count: mean of all hourly frames per day.
-    area: noon-representative frame per day (scanline only for override/class-affected days).
-    """
-    conn = db()
-    # 一次查出本品系所有植株中有哪些有 override / cotyledon（兩條查詢取代每株 2 條）
-    prefix = f"{batch}_{cultivar}_"
-    plants_with_ov  = {r[0] for r in conn.execute(
-        "SELECT DISTINCT plant_id FROM leaf_override WHERE plant_id LIKE ?", (prefix + "%",))}
-    plants_with_cot = set()
-    if exclude_class:
-        plants_with_cot = {r[0] for r in conn.execute(
-            "SELECT DISTINCT plant_id FROM leaf_class WHERE klass=? AND plant_id LIKE ?",
-            (exclude_class, prefix + "%"))}
-
-    result = []
-    for fj in sorted(DATA_ROOT.glob(f"{batch}/{cultivar}/*/*/frames.json")):
-        rel = fj.parent.relative_to(DATA_ROOT).as_posix()  # <batch>/<cultivar>/<treatment>/rep-<n>
-        plant_id = pid_of(rel)
-        rep = fj.parent.name   # 'rep-<n>'
-        short = rep
-
-        # Fast path: no overrides, no cotyledon marks → curves.json (3.9 KB vs 5.1 MB)
-        if plant_id not in plants_with_ov and plant_id not in plants_with_cot:
-            if plant_id not in CURVES_CACHE:
-                cj = fj.parent / "curves.json"
-                CURVES_CACHE[plant_id] = json.load(open(cj))["curves"] if cj.exists() else None
-            curves = CURVES_CACHE[plant_id]
-            if curves is not None:
-                result.append({"plant_id": plant_id, "plant": short,
-                                "days": [{"daf": c["daf"], "date": c["date"],
-                                          "count": c["keep_count"], "area": c["keep_area"]}
-                                         for c in curves]})
-                continue
-
-        # Slow path: recompute with frames.json (plants with overrides or cotyledon marks)
-        cache_key = (plant_id, exclude_class)
-        if cache_key in PLANT_CURVE_CACHE:
-            result.append({"plant_id": plant_id, "plant": short, "days": PLANT_CURVE_CACHE[cache_key]})
-            continue
-
-        ov = {t: s for t, s in conn.execute(
-            "SELECT tid,state FROM leaf_override WHERE plant_id=?", (plant_id,)).fetchall()}
-        excl = set()
-        if exclude_class:
-            excl = {t for (t,) in conn.execute(
-                "SELECT tid FROM leaf_class WHERE plant_id=? AND klass=?",
-                (plant_id, exclude_class)).fetchall()}
-        affected = {tid.split("#")[0] for tid in ov} | {tid.split("#")[0] for tid in excl}
-        data = json.load(open(fj))
-        by_date: dict = defaultdict(list)
-        for fr in data["frames"]:
-            by_date[fr["date"]].append(fr)
-
-        days = []
-        for date in sorted(by_date):
-            day_frs = by_date[date]
-            counts = [
-                sum(1 for lf in fr["leaves"]
-                    if ov.get(lf["tid"], 1 if lf["keep"] else 0) == 1 and lf["tid"] not in excl)
-                for fr in day_frs
-            ]
-            noon = min(day_frs, key=lambda f: abs(f.get("hour", 12) - 12))
-            if date in affected:
-                keep = [lf for lf in noon["leaves"]
-                        if ov.get(lf["tid"], 1 if lf["keep"] else 0) == 1 and lf["tid"] not in excl]
-                area = union_area([lf["points"] for lf in keep])
-            else:
-                area = noon.get("keep_area", 0)
-            days.append({"daf": day_frs[0]["daf"], "date": date,
-                         "count": round(sum(counts) / len(counts), 1), "area": area})
-        PLANT_CURVE_CACHE[cache_key] = days
-        result.append({"plant_id": plant_id, "plant": short, "days": days})
-    return JSONResponse({"replicates": result})
-
-
 @app.get("/api/note")
 def get_note(id: str):
     row = db().execute("SELECT text FROM note WHERE plant_id=?", (id,)).fetchone()
@@ -406,7 +317,7 @@ class Note(BaseModel):
 
 @app.post("/api/note")
 def set_note(n: Note):
-    """植株級自然語言註記；空字串 → 刪除該株 note。"""
+    """Free-text note on the plant; an empty string deletes it."""
     c = db()
     if n.text.strip():
         c.execute("INSERT INTO note(plant_id,text,ts) VALUES(?,?,datetime('now')) "
@@ -427,5 +338,5 @@ if __name__ == "__main__":
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8090)
     a = ap.parse_args()
-    print(f"[leaf-canopy-qc] serving on {a.host}:{a.port}  (numpy scanline area)")
+    print(f"[qc] serving on http://{a.host}:{a.port}")
     uvicorn.run(app, host=a.host, port=a.port)

@@ -1,46 +1,50 @@
-"""imaging 共用設定 — 資料路徑與批號格式的唯一定義（core.py、traits_2d、overlays 共用）。
+"""Shared imaging settings: the single definition of data paths and the batch code format
+(used by core.py, traits_2d and overlays).
 
-imaging 只讀寫檔案、不連資料庫。路徑一律環境變數優先，否則取 repo 內的相對位置；
-QC_ROOT／RASPI_ROOT 的解析與 qc/server.py 相同，imaging 寫出的 data/ 由 QC 工具直接讀取。
+The imaging steps only read and write files; they never connect to the database. Each path
+comes from an environment variable if set, otherwise from a location inside the repository.
+QC_ROOT and RASPI_ROOT are resolved the same way as in qc/server.py, so the data/ tree written
+here is read directly by the review tool.
 """
 import os
 import re
 from pathlib import Path
 
-# imaging/ 程式碼所在
+# Directory of the imaging/ code
 CODE_ROOT = Path(__file__).resolve().parent
 
-# --- 批號正規形式 ---
-# canonical batch_code = 西元年 4 碼 + 'B' + 序號 2 碼，如 2025B08。
-# 短名（B08）一律拒絕：批號同時是 staging 檔名的 key，入口形式不一會讀到別批的舊產物。
+# --- Batch code format ---
+# A full batch code is a four-digit year, 'B' and a two-digit number, e.g. 2025B08.
+# Short codes (B08) are rejected: the batch code is also the key in staging file names, and
+# accepting two forms could pick up an older output of another batch.
 BATCH_CODE_RE = re.compile(r"^\d{4}B\d{2}$")
 
 
 def require_batch_code(batch_code):
-    """驗證並回傳 canonical batch_code；不合格丟 ValueError。所有吃 --batch 的入口都要先過。"""
+    """Validate and return a full batch code; raise ValueError otherwise. Every --batch entry point calls this."""
     if not batch_code or not BATCH_CODE_RE.match(batch_code):
         raise ValueError(
             f"bad batch_code {batch_code!r}: needs a full batch code such as 2025B08, not B08")
     return batch_code
 
 
-# --- 輸入 ---
-# QC_ROOT：QC 工具的根，其下 data/（frames.json）與 qc.sqlite（人工逐葉覆寫）
+# --- Inputs ---
+# QC_ROOT: root of the review tool, holding data/ (frames.json) and qc.sqlite (per-leaf review decisions)
 QC_ROOT = Path(os.environ.get("QC_ROOT", CODE_ROOT.parent / "qc"))
 QC_DATA = QC_ROOT / "data"
 QC_DB = QC_ROOT / "qc.sqlite"
 
-# RASPI_ROOT：單株裁切影像 <batch>/<cultivar>/<treatment>/rep-<n>/*.png
+# RASPI_ROOT: single-plant images, <batch>/<cultivar>/<treatment>/rep-<n>/*.png
 _raspi_env = os.environ.get("RASPI_ROOT")
 RASPI_ROOT = (Path(_raspi_env) if _raspi_env
               else QC_ROOT / "raspi_RGB" if (QC_ROOT / "raspi_RGB").exists()
               else QC_ROOT.parent / "raspi_RGB")
 
-# WEIGHTS_DIR：四個模型權重放同一個目錄
+# WEIGHTS_DIR: one directory for the four model weights
 WEIGHTS_DIR = Path(os.environ.get("WEIGHTS_DIR", CODE_ROOT / "weights"))
 
-# --- 輸出（可重生）---
-# 分割與歸屬的透明疊層 PNG，與 RASPI_ROOT 同結構的獨立樹
+# --- Outputs (can be regenerated) ---
+# Transparent segmentation and assignment overlays, in a tree that mirrors RASPI_ROOT
 OVERLAY_ROOT = Path(os.environ.get("OVERLAY_ROOT", RASPI_ROOT.parent / "raspi_RGB_overlay"))
-# traits_2d 的 staging CSV
+# Staging CSV written by traits_2d
 OUT = Path(os.environ.get("OUT_DIR", CODE_ROOT / "out"))

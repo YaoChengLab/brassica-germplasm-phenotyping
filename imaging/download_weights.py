@@ -14,15 +14,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import WEIGHTS_DIR  # noqa: E402
 
 # name, url, sha256, size in bytes
-# Our three weights are attached to this repository's GitHub Release; URLs are filled in at release time.
+# Our three weights are attached to this repository's GitHub Releases: the two leaf
+# segmentation models under the tag yolo-weight, the keypoint model under keypoint-weight.
 # GenYOLO-Leaf is not redistributed here: it comes from the authors' own release.
+RELEASES = "https://github.com/YaoChengLab/brassica-germplasm-phenotyping/releases/download"
 WEIGHTS = [
-    ("run_v11m_640_s1_v3_best.pt", "",
-     "5b8c2212c3580542b76d248f58865f9f83b7cb889a1456cd3d44fbb133054e11", 45185270),
-    ("yolov8mseg_train31.pt", "",
-     "bd64449929a6f15004b82982b7fa8e74e87299a7b2f0560a28a4d3cd1f68b849", 54936837),
-    ("stage8_keypoint_v8.pth", "",
-     "66974ed99cf90bc00ab1caf51bb10805624e76623b38215e1d5a4b0519f45186", 55827489),
+    ("brassicaceae_leaf_seg.pt", f"{RELEASES}/yolo-weight/brassicaceae_leaf_seg.pt",
+     "5f46aa446871d0f1a3000ea979360f4a0a6225011b5bd0fcf42d5342efcdb1d1", 45235799),
+    ("brassicaceae_lobed_leaf_seg.pt", f"{RELEASES}/yolo-weight/brassicaceae_lobed_leaf_seg.pt",
+     "7557be3824fa7b2e3aa6df1489fbdfdbc42c3e1567173ff1d726db62a6e42c5c", 54948417),
+    ("brassicaceae_leaf_keypoint.pth", f"{RELEASES}/keypoint-weight/brassicaceae_leaf_keypoint.pth",
+     "4274f02143b4ee6ea4127c698297dbd4e9eee3534ecf8188b7e4626bd4cc9385", 55830576),
     ("genyolo_leaf_yolov11m.pt",
      "https://github.com/aaslihanyildirim/GenYOLO-Leaf/releases/download/shared_best_models/genyolo_leaf_yolov11m.pt",
      "b8773479950c22b8862e029f6c129b1d60c69e562ae3442ce278ff7d158beb02", 45186308),

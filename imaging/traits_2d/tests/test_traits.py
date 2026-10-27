@@ -1,5 +1,5 @@
-"""traits_2d 最小測試（S2）：COLUMN_MAP 完整性、葉數、空 mask、business key。
-跑法：conda run -n pheno python -m pytest traits_2d/tests/ -q
+"""Minimal traits_2d tests: COLUMN_MAP completeness, leaf count, empty mask, plant key.
+Run from imaging/ (needs pytest): python -m pytest traits_2d/tests/ -q
 """
 import numpy as np
 import cv2
@@ -8,14 +8,11 @@ from traits_2d import traits as T
 
 
 def test_db_trait_cols_count():
-    # DB trait_observations 113 實體欄 − 9 個非 trait 欄（id / plant_id / sensor_id /
+    # trait_observations has 113 columns minus 9 non-trait columns (id / plant_id / sensor_id /
     # observation_timestamp / day_after_sewing / image_file / qc_status /
-    # pipeline_version / analysis_run_id）= 104 trait 欄。
-    # 沿革：121 →（007 DROP mer_angle）→ 120 →（012 DROP 三個全表 NULL 欄）→ 117
-    #      →（013 DROP 三個 radius 欄，抽取器不產且僅 20 列 legacy 值）→ 114
-    #      →（014 DROP source_hash，宣告但從未填；非 trait 欄故不動 104）→ 113。
+    # pipeline_version / analysis_run_id) = 104 trait columns.
     assert len(T.DB_TRAIT_COLS) == 104
-    assert len(set(T.DB_TRAIT_COLS)) == 104  # 無重複
+    assert len(set(T.DB_TRAIT_COLS)) == 104  # no duplicates
     assert "mer_angle" not in T.DB_TRAIT_COLS
 
 
@@ -33,13 +30,13 @@ def test_to_db_row_empty_mask_leaf_count_zero():
     row = T.to_db_row({}, n_leaves=0)
     assert set(row) == set(T.DB_TRAIT_COLS)
     assert row["leaf_count"] == 0
-    assert row["area_pixels"] == ""          # 空 mask → NULL
-    assert row["solidity"] == ""             # 空 mask → extractor 無輸出 → NULL
+    assert row["area_pixels"] == ""          # empty mask -> NULL
+    assert row["solidity"] == ""             # empty mask -> no extractor output -> NULL
 
 
 def test_to_db_row_maps_extractor_by_name_and_drops_extras():
     raw = {"area_pixels": 123.0, "solidity": 0.8,
-           "boundary_method": 1, "my_custom_trait_1": 9}  # 後兩者非 DB 欄應丟棄
+           "boundary_method": 1, "my_custom_trait_1": 9}  # the last two are not database columns and are dropped
     row = T.to_db_row(raw, n_leaves=3)
     assert row["leaf_count"] == 3
     assert row["area_pixels"] == 123.0
@@ -54,47 +51,47 @@ def test_to_db_row_nan_becomes_null():
 
 
 def test_leaf_area_aliases_area_pixels():
-    # extractor 不產 leaf_area；須以 area_pixels 填（消費端 batch_correction 讀 leaf_area）
+    # the extractor has no leaf_area; it is filled from area_pixels
     row = T.to_db_row({"area_pixels": 500.0}, n_leaves=2)
     assert row["leaf_area"] == 500.0
     assert row["area_pixels"] == 500.0
-    # 空 mask → 兩者皆 NULL
+    # empty mask -> both NULL
     assert T.to_db_row({}, n_leaves=0)["leaf_area"] == ""
 
 
 def test_dropped_columns_are_not_written():
-    # 2026-08-17 兩支 migration 把六個死欄從 DB DROP 掉；即使 extractor 誤帶，
-    # 也不可再出現在寫入列裡（欄位不存在 → INSERT 會炸）
-    #   012  compactness / roundness / gap_fraction_canopy_porosity（全表 NULL）
-    #   013  max_ / mean_ / median_radius_from_centroid（抽取器 2026-07-07 起不產）
+    # These six columns no longer exist in the database; even if the extractor returned them
+    # they must not appear in a written row (the INSERT would fail):
+    #   compactness / roundness / gap_fraction_canopy_porosity
+    #   max_ / mean_ / median_radius_from_centroid (no longer produced by the extractor)
     raw = {"roundness": 0.9, "compactness": 0.5, "gap_fraction_canopy_porosity": 0.3,
            "max_radius_from_centroid": 1.0, "mean_radius_from_centroid": 2.0,
            "median_radius_from_centroid": 3.0}
     row = T.to_db_row(raw, n_leaves=1)
     for col in raw:
         assert col not in row
-    # 同族仍在產的兩欄不受影響
+    # the two related columns still produced are unaffected
     assert "min_radius_from_centroid" in T.DB_TRAIT_COLS
     assert "std_radius_from_centroid" in T.DB_TRAIT_COLS
 
 
 def test_parse_business_key():
-    # Phase 3 rename 後路徑結構 = <batch>/<cultivar>/<treatment>/rep-<n>
+    # path layout: <batch>/<cultivar>/<treatment>/rep-<n>
     rel = "2025B08/s0128/Control/rep-1"
     k = T.parse_business_key(rel)
     assert k["batch_code"] == "2025B08"
     assert k["cultivar_code"] == "s0128"
     assert k["replicate_code"] == "1"
-    assert k["sensor_code"] == ""             # sensor 已不在路徑 → resolver 查 DB chamberhistory
-    assert k["old_plant_id"] == ""            # id 已不在路徑（provenance 留空）
+    assert k["sensor_code"] == ""             # not in the path; the loader finds the camera in the database
+    assert k["old_plant_id"] == ""            # not in the path (provenance left empty)
     assert k["plant_type"] == "observation_individual"
-    assert "treatment_code" not in k          # 刻意留 S3 解析
+    assert "treatment_code" not in k          # resolved by the loader
 
 
 def test_business_key_underscore():
     rel = "2025B08/s0128/Control/rep-1"
     assert T.parse_rel(rel) == ("2025B08", "s0128", "Control", "1")
-    assert T.business_key(rel) == "2025B08_s0128_Control_1"    # ＝ re-key 後 qc.sqlite plant_id
+    assert T.business_key(rel) == "2025B08_s0128_Control_1"    # = plant_id in qc.sqlite
 
 
 def test_ts_to_timestamp():
@@ -104,9 +101,9 @@ def test_ts_to_timestamp():
 
 def test_effective_keep_override_wins():
     ov = {"t1": 0, "t2": 1}
-    assert T.effective_keep({"tid": "t1", "keep": True}, ov) is False   # override reject 勝
-    assert T.effective_keep({"tid": "t2", "keep": False}, ov) is True   # override keep 勝
-    assert T.effective_keep({"tid": "t9", "keep": True}, ov) is True    # 無 override → M2 keep
+    assert T.effective_keep({"tid": "t1", "keep": True}, ov) is False   # a reject decision wins
+    assert T.effective_keep({"tid": "t2", "keep": False}, ov) is True   # a keep decision wins
+    assert T.effective_keep({"tid": "t9", "keep": True}, ov) is True    # no decision -> automatic keep
     assert T.effective_keep({"tid": "t9", "keep": False}, ov) is False
 
 
@@ -115,5 +112,5 @@ def test_build_mask_fills_polygon():
     m = T.build_mask(leaves)
     assert m.shape == (T.CANVAS, T.CANVAS)
     assert m.sum() > 0
-    # 太少點的葉不畫
+    # leaves with too few points are not drawn
     assert T.build_mask([{"points": [[1, 1], [2, 2]]}]).sum() == 0

@@ -1,12 +1,12 @@
 """Stage 8 v5 — polygon-aware keypoint model.
 
-vs v3/v4 (stage8_keypoint_poc.py) 三點改動：
-  1. Dynamic interpolation: upscale 時用 INTER_CUBIC、downscale 時用 INTER_AREA
-  2. pad_ratio jitter [0.05, 0.30] 當 scale augmentation（augment=True 才生效）
-  3. Polygon mask 當第 4 channel input（input shape (4, 256, 256)）
+Three changes from stage8_keypoint_poc.py:
+  1. Dynamic interpolation: INTER_CUBIC when upscaling, INTER_AREA when downscaling
+  2. pad_ratio jitter [0.05, 0.30] as scale augmentation (only with augment=True)
+  3. Polygon mask as a 4th input channel (input shape (4, 256, 256))
 
-Shared helpers (direction_loss / spread_loss / load_gt_samples 等) 從
-stage8_keypoint_poc 重用。模型 / dataset 是平行版本。
+Shared helpers (direction_loss, spread_loss, load_gt_samples, ...) are reused from
+stage8_keypoint_poc; the model and dataset classes here are parallel versions.
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from stage8_keypoint_poc import (
 )
 
 PAD_RANGE_AUG = (0.05, 0.30)   # train-time jitter
-PAD_FIXED = 0.15                # eval/inference default (同 v3/v4)
+PAD_FIXED = 0.15                # eval/inference default (as in stage8_keypoint_poc)
 
 
 def compute_crop_bbox_v5(img_hw: tuple[int, int], polygon: np.ndarray,
@@ -64,7 +64,7 @@ def coords_crop_to_full(pt_norm: np.ndarray,
 
 
 def dynamic_resize(img: np.ndarray, target: int = CROP_SIZE) -> np.ndarray:
-    """Patch 1: upscale 用 INTER_CUBIC，downscale 用 INTER_AREA。"""
+    """Patch 1: INTER_CUBIC when upscaling, INTER_AREA when downscaling."""
     h, w = img.shape[:2]
     if max(h, w) > target:
         interp = cv2.INTER_AREA
@@ -76,8 +76,8 @@ def dynamic_resize(img: np.ndarray, target: int = CROP_SIZE) -> np.ndarray:
 def render_polygon_mask(polygon_crop_coords: np.ndarray,
                           crop_hw: tuple[int, int],
                           target: int = CROP_SIZE) -> np.ndarray:
-    """Patch 3: 從 polygon (crop 座標) 畫 binary mask，resize 到 target。
-    mask 用 nearest 保留 0/1 邊緣。"""
+    """Patch 3: draw a binary mask from the polygon (crop coordinates) and resize it to target.
+    Nearest-neighbour resizing keeps the 0/1 edges."""
     h, w = crop_hw
     mask = np.zeros((h, w), dtype=np.uint8)
     poly = polygon_crop_coords.astype(np.int32)
@@ -87,17 +87,17 @@ def render_polygon_mask(polygon_crop_coords: np.ndarray,
 
 
 class LeafDatasetV5(Dataset):
-    """Dataset 改動 vs v3:
-    - Crop / mask 在 __getitem__ on-the-fly 算（不再 init 一次性 cache）
-    - augment=True 時 pad_ratio ~ U[0.05, 0.30]
-    - 回 (tensor_4ch, labels_4): tensor RGB(3) + mask(1)
+    """Dataset changes from stage8_keypoint_poc:
+    - crop and mask are computed on the fly in __getitem__ (no one-off cache at init)
+    - with augment=True, pad_ratio ~ U[0.05, 0.30]
+    - returns (tensor_4ch, labels_4): tensor RGB(3) + mask(1)
     """
     def __init__(self, samples: list[dict], augment: bool = False,
                   img_cache: dict | None = None):
         self.samples = samples
         self.augment = augment
         self._img_cache = img_cache if img_cache is not None else {}
-        # Pre-warm image cache (一張 plant image 多個 leaf 共用)
+        # Pre-warm image cache (several leaves share one plant image)
         for s in samples:
             if s["image_path"] not in self._img_cache:
                 img = cv2.imread(s["image_path"])
@@ -183,7 +183,7 @@ class LeafDatasetV5(Dataset):
 
 
 class KeypointModelV5(nn.Module):
-    """ResNet-18 + 4-channel conv1 + 同 v3/v4 的 head。"""
+    """ResNet-18 + 4-channel conv1 + the head of stage8_keypoint_poc."""
     def __init__(self, freeze_stages: int = 2) -> None:
         super().__init__()
         backbone = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
@@ -209,7 +209,7 @@ class KeypointModelV5(nn.Module):
                 p.requires_grad = False
             for p in backbone.layer1.parameters():
                 p.requires_grad = False
-            # NOTE: conv1 留可訓練 — 第 4 channel zero init 要學起來
+            # NOTE: conv1 stays trainable so the zero-initialised 4th channel can learn
         if freeze_stages >= 2:
             for p in backbone.layer2.parameters():
                 p.requires_grad = False

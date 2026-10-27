@@ -1,0 +1,124 @@
+.App {
+  min-height: 100vh;
+  background-color: #f8f9fa;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.table th {
+  border-top: none;
+}
+
+.table th[style*="cursor: pointer"]:hover {
+  background-color: #e9ecef;
+}
+
+.sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.badge {
+  font-size: 0.75em;
+}
+
+.text-truncate-custom {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Custom scrollbar for better UX */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.frosted-glass-card {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  color: white;
+}
+
+.frosted-glass-card-kpi {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  padding: 15px;
+}
+
+.frosted-glass-card-chart {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  padding: 20px;
+}
+
+.large-font-page {
+  /* 20px. The cultivar page is read at arm's length and the users browse at 90%
+     zoom, so the browser default (and the old 18px) reads small. */
+  font-size: 1.25rem;
+}
+
+/* Cultivar page profile block: a narrow identity column (info / batches / photo)
+   beside a wider quantitative column (traits / growth curves). The columns are
+   stretched to equal height and the photo card absorbs the leftover space, so the
+   block reads as one unit whatever the chart height. Collapses to a single column
+   before either side becomes unreadable. */
+.cultivar-profile-grid {
+  display: grid;
+  grid-template-columns: 42% 1fr;
+  gap: 16px;
+  align-items: stretch;
+  margin-top: 16px;
+}
+
+.cultivar-profile-left {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 16px;
+  min-height: 0;
+}
+
+.cultivar-profile-right {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  min-height: 0;
+}
+
+@media (max-width: 1150px) {
+  .cultivar-profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cultivar-profile-left,
+  .cultivar-profile-right {
+    grid-template-rows: none;
+  }
+}

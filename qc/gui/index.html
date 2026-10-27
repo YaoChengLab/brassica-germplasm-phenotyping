@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>leaf-canopy-qc — 葉片歸屬審查</title>
+<title>Leaf ownership review</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: system-ui, sans-serif; font-size: 13px; display: flex; height: 100vh; }
@@ -23,26 +23,67 @@
   .rev .rev-tick { display: inline; }
   .cot-tick { color: #a0f; font-size: 11px; display: none; }
   .cot_done .cot-tick { display: inline; }
-  polygon.keep { fill: rgba(60,230,60,.25); stroke: #1a1; stroke-width: 1.5; cursor: pointer; }
-  polygon.reject { fill: none; stroke: rgba(220,40,40,.7); stroke-width: 2; pointer-events: all; cursor: pointer; }
+  polygon.keep { fill: rgba(60,230,60,.25); stroke: #1a1; stroke-width: 2.5; cursor: pointer; }
+  polygon.reject { fill: none; stroke: rgba(220,40,40,.7); stroke-width: 3; pointer-events: all; cursor: pointer; }
   polygon.ov { stroke-dasharray: 4 2; }
-  polygon.cot { stroke: #a0f; stroke-width: 3; stroke-dasharray: 2 3; }
+  polygon.cot { stroke: #a0f; stroke-width: 3.5; stroke-dasharray: 2 3; }
   polygon.hull { fill: none; stroke: #ff1e1e; stroke-width: 2.5; stroke-dasharray: 7 4; pointer-events: none; }
   button { font-size: 13px; padding: 3px 8px; }
   .leg { font-size: 11px; color: #555; }
+  .leg-h { font-weight: bold; color: #333; margin-top: 6px; }
+  .leg ul { margin: 2px 0 0; padding-left: 16px; }
+  .leg ul.keyed { list-style: none; padding-left: 2px; }
+  .leg li { margin: 1px 0; }
+  .sw { display: inline-block; width: 14px; height: 9px; margin-right: 5px; vertical-align: middle; box-sizing: border-box; }
+  .sw-keep { background: rgba(60,230,60,.25); border: 2px solid #1a1; }
+  .sw-reject { border: 2.5px solid rgba(220,40,40,.7); }
+  .sw-ov { border: 2px dotted #000; }
+  .sw-cot { border: 2px dotted #a0f; }
+  .sw-line { height: 0; }
+  .sw-hull { border-top: 2.5px dashed #ff1e1e; }
+  .sw-gray { border-top: 2px solid #999; }
+  .sw-blue { border-top: 2px solid #06c; }
+  #frameImg[src=""] { visibility: hidden; }
 </style>
 </head>
 <body>
 <div id="side">
-  <div class="card"><b>Plants</b> <a href="/curves" style="font-size:11px;color:#36c;float:right">📈 品系曲線</a><div id="tree">loading…</div></div>
+  <div class="card"><b>Plants</b><div id="tree">loading…</div></div>
   <div class="card">
     <div id="finfo">—</div>
-    <p class="leg">綠遮罩=KEEP(yes)　紅框=REJECT(no)　虛線=已人工改　<span style="color:#a0f">紫=子葉</span>　箭頭=base→tip<br>
-    點葉 = 翻轉歸屬。<b>Shift+點葉 = 標/取消子葉</b>。點曲線 → 定位該天。<br>
-    曲線：灰=raw(before)，藍=after(編輯後)。<br>
-    熱鍵 <b>a</b>/<b>d</b>=前/後（逐日=天／逐時=幀），<b>w</b>/<b>s</b>=前/後一天。</p>
-    <div style="margin-top:4px"><label><input type="checkbox" id="modeChk" checked> <b>逐日</b>（每天一張照片、折線一點；取消勾選＝逐時全幀）</label></div>
-    <div style="margin-top:4px"><label><input type="checkbox" id="dapdChk"> 排除子葉預覽（DAPD）</label> <span id="cotInfo" class="leg"></span></div>
+    <div class="leg">
+      <div class="leg-h">Image overlay</div>
+      <ul class="keyed">
+        <li><span class="sw sw-keep"></span>Keep &nbsp; <span class="sw sw-reject"></span>Reject</li>
+        <li><span class="sw sw-ov"></span>Dashed: changed in manual review</li>
+        <li><span class="sw sw-cot"></span>Cotyledon</li>
+        <li><svg class="sw" viewBox="0 0 14 14" style="width:14px;height:14px"><rect width="14" height="14" rx="2" fill="#b4b4c4"/><circle cx="7" cy="7" r="4.8" fill="none" stroke="#fff" stroke-width="1.6" stroke-dasharray="2.2 1.6"/></svg>Ownership circle</li>
+        <li><svg class="sw" viewBox="0 0 16 10" style="width:16px;height:10px"><circle cx="3" cy="5" r="2.3" fill="none" stroke="#08f" stroke-width="1.2"/><line x1="5.3" y1="5" x2="11" y2="5" stroke="#08f" stroke-width="1.5"/><path d="M10,2 L16,5 L10,8 z" fill="#08f"/></svg>Predicted leaf tip and base: open circle = tip, arrowhead = base</li>
+        <li><span class="sw sw-line sw-hull"></span>Convex hull of the kept leaves</li>
+      </ul>
+      <ul>
+        <li>An outward bulge in the hull usually marks a false keep, such as a neighboring plant&#39;s leaf, that should be rejected.</li>
+      </ul>
+      <div class="leg-h">Review</div>
+      <ul>
+        <li>Click a leaf: reverse its keep/reject decision.</li>
+        <li>Shift+click a leaf: mark it as a cotyledon, or clear the mark.</li>
+        <li>Click a chart: go to that day.</li>
+      </ul>
+      <div class="leg-h">Charts</div>
+      <ul class="keyed">
+        <li><span class="sw sw-line sw-gray"></span>All detections</li>
+        <li><span class="sw sw-line sw-blue"></span>Kept leaves</li>
+        <li><span class="sw sw-line sw-hull"></span>Convex hull area (area chart)</li>
+      </ul>
+      <div class="leg-h">Keys</div>
+      <ul>
+        <li><b>a</b> / <b>d</b>: previous / next day in the daily view, image in the hourly view</li>
+        <li><b>s</b> / <b>w</b>: previous / next day</li>
+      </ul>
+    </div>
+    <div style="margin-top:4px"><label><input type="checkbox" id="modeChk" checked> <b>Daily view</b> (the single-plant image nearest noon for each day; clear to show every hourly image)</label></div>
+    <div style="margin-top:4px"><label><input type="checkbox" id="dapdChk"> Exclude cotyledons from the charts</label> <span id="cotInfo" class="leg"></span></div>
   </div>
 </div>
 <div id="imgcol">
@@ -52,17 +93,17 @@
   </div>
   <div class="card" id="imgctrl">
     <div>
-      <button id="reviewBtn">標記為已審查</button> <span id="revState"></span>
+      <button id="reviewBtn">Mark as reviewed</button> <span id="revState"></span>
       &nbsp;&nbsp;
-      <button id="cotDoneBtn" style="color:#a0f;border-color:#c8a0f0">子葉標記完成</button> <span id="cotDoneState" style="color:#a0f"></span>
+      <button id="cotDoneBtn" style="color:#a0f;border-color:#c8a0f0">Cotyledons marked</button> <span id="cotDoneState" style="color:#a0f"></span>
     </div>
     <div style="margin-top:8px">
-      <div style="font-size:11px;color:#555;margin-bottom:2px">植株觀察註記 <span id="noteState"></span></div>
-      <textarea id="noteBox" rows="3" placeholder="審查後的自然語言觀察…"
+      <div style="font-size:11px;color:#555;margin-bottom:2px">Notes on this plant <span id="noteState"></span></div>
+      <textarea id="noteBox" rows="3" placeholder="Observations made during the review…"
         style="width:100%;font-size:12px;font-family:inherit;resize:vertical"></textarea>
       <div style="margin-top:4px">
-        <button id="noteSave">儲存</button>
-        <button id="noteClear">清除</button>
+        <button id="noteSave">Save</button>
+        <button id="noteClear">Clear</button>
       </div>
     </div>
   </div>
@@ -74,18 +115,18 @@
 <script>
 const $ = s => document.querySelector(s);
 let PID=null, DATA=null, OV={}, CLS={}, autoKeep={}, frames=[], curIdx=0, afterByStem={};
-let MODE='day', dayReps=[];              // 逐日/逐時；dayReps=每個 DAF 的正午代表幀 index（升冪）
+let MODE='day', dayReps=[];              // per day / per hour; dayReps = index of each DAF's representative image nearest noon (ascending)
 const isCot = tid => CLS[tid]==='cotyledon';
 const dapdOn = () => $('#dapdChk').checked;
 const dayMode = () => MODE==='day';
-// 每個 DAF 取「離正午(hour 12)最近」的幀當代表（與 jumpToDaf 規則一致）
+// each DAF is represented by the image nearest noon (hour 12), the same rule as jumpToDaf
 function computeDayReps(){
   const byDaf=new Map();
   frames.forEach((f,k)=>{ const cur=byDaf.get(f.daf);
     if(cur==null || Math.abs(f.hour-12)<Math.abs(frames[cur].hour-12)) byDaf.set(f.daf,k); });
   dayReps=[...byDaf.keys()].sort((a,b)=>a-b).map(daf=>byDaf.get(daf));
 }
-// 逐日模式下折線/照片只走每日代表幀
+// in per-day mode the curves and images step through the daily representative images only
 function plotFrames(){ return dayMode() ? dayReps.map(k=>frames[k]) : frames; }
 
 async function loadTree(){
@@ -111,7 +152,7 @@ async function loadTree(){
   updateRollup();
 }
 
-// 子層全 reviewed / cot_done → 父層階層也打勾 (cult: 所有 plant；batch: 所有 cult)
+// all children reviewed / cot_done -> tick the parent too (accession: all plants; batch: all accessions)
 function updateRollup(){
   document.querySelectorAll('#tree .cult').forEach(cd=>{
     const plants=[...cd.querySelectorAll('.plant')];
@@ -129,7 +170,7 @@ async function selectPlant(id, el){
   document.querySelectorAll('.plant.sel').forEach(e=>e.classList.remove('sel'));
   if(el) el.classList.add('sel');
   PID=id;
-  fetch('/api/warm?id='+encodeURIComponent(id));   // 背景把整株影像讀進 server RAM
+  fetch('/api/warm?id='+encodeURIComponent(id));   // read the plant's images into server RAM in the background
   DATA = await (await fetch('/api/plant?id='+encodeURIComponent(id))).json();
   OV = await (await fetch('/api/overrides?id='+encodeURIComponent(id))).json();
   CLS = await (await fetch('/api/classes?id='+encodeURIComponent(id))).json();
@@ -141,9 +182,9 @@ async function selectPlant(id, el){
   await refreshAfter();
   drawCurves(); showFrame(curIdx);
   const rev = el && el.classList.contains('rev');
-  $('#revState').textContent = rev?'（已審查）':'';
+  $('#revState').textContent = rev?'(reviewed)':'';
   const cotDone = el && el.classList.contains('cot_done');
-  $('#cotDoneState').textContent = cotDone?'（已標）':'';
+  $('#cotDoneState').textContent = cotDone?'(done)':'';
   updateCotInfo();
   loadNote(id);
 }
@@ -153,12 +194,12 @@ async function loadNote(id){
   const r = await (await fetch('/api/note?id='+encodeURIComponent(id))).json();
   $('#noteBox').value = r.text||''; setNoteState('');
 }
-function writeNote(text){            // 按鈕觸發：寫入後端 (空字串 → 後端刪除)
+function writeNote(text){            // on button click: write to the back end (an empty string deletes the note)
   if(!PID) return Promise.resolve();
   const id=PID;
-  setNoteState('儲存中…','#888');
+  setNoteState('Saving…','#888');
   return fetch('/api/note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,text})})
-    .then(()=>{ if(PID===id) setNoteState(text.trim()?'已儲存':'已清除'); });
+    .then(()=>{ if(PID===id) setNoteState(text.trim()?'Saved':'Cleared'); });
 }
 
 function eff(tid){ return (tid in OV) ? OV[tid] : (autoKeep[tid]?1:0); }
@@ -170,12 +211,12 @@ async function refreshAfter(){
 }
 function updateCotInfo(){
   const n=Object.values(CLS).filter(k=>k==='cotyledon').length;
-  $('#cotInfo').textContent = n ? `子葉標記 ${n} 軌跡` : '';
+  $('#cotInfo').textContent = n ? `${n} cotyledon trajector${n===1?'y':'ies'} marked` : '';
 }
 
-function frameX(fr){ return fr.daf + (fr.hour-12)/24; }   // 連續分數 DAF (逐時)
+function frameX(fr){ return fr.daf + (fr.hour-12)/24; }   // fractional DAF (per hour)
 function curFrameX(){ const fr=frames[curIdx]; return fr ? frameX(fr) : null; }
-// 只移動橘色游標線（不重建整張圖）——a/d/w/s 換幀時資料不變，僅游標移動
+// move only the orange cursor line (no full redraw): a/d/w/s change the image, not the data
 function moveCursor(svg,cx){
   const g=svg._geo; if(!g) return;
   const line=svg.querySelector('.cursorline'); if(!line) return;
@@ -185,19 +226,19 @@ function moveCursor(svg,cx){
 function updateCursor(){ const cx=curFrameX(); moveCursor($('#cCount'),cx); moveCursor($('#cArea'),cx); }
 function drawCurves(){
   const cx = curFrameX();
-  const pf = plotFrames();                    // 逐日=每日代表幀；逐時=全幀
-  const unit = dayMode()?'逐日':'逐時';
+  const pf = plotFrames();                    // per day = daily representative images; per hour = all images
+  const unit = dayMode()?'daily':'hourly';
   const rawCount = pf.map(fr=>({x:frameX(fr), y:(fr.raw_count!=null?fr.raw_count:fr.leaves.length)}));
   const aftCount = pf.map(fr=>({x:frameX(fr), y:fr.leaves.reduce((n,lf)=>n+((eff(lf.tid)===1 && !(dapdOn()&&isCot(lf.tid)))?1:0),0)}));
-  lineChart($('#cCount'),`葉片數 (${unit})`, rawCount, aftCount, cx);
+  lineChart($('#cCount'),`Leaf count (${unit})`, rawCount, aftCount, cx);
   const rawArea = pf.map(fr=>({x:frameX(fr), y:(fr.raw_area!=null?fr.raw_area:0)}));
   const aftArea = pf.map(fr=>({x:frameX(fr), y:(afterByStem[fr.stem]?afterByStem[fr.stem].area_after:(fr.keep_area!=null?fr.keep_area:0))}));
-  // convex hull 面積（kept 葉，隨 override 即時）→ hull 與 leaf 線間距 = 絕對殘差/開放程度
+  // convex hull area of the retained leaves (updates with review decisions); the gap between the hull and leaf curves shows how open the canopy is
   const hullArea = pf.map(fr=>{
     const allp=fr.leaves.filter(lf=>eff(lf.tid)===1 && lf.points.length>=3).flatMap(lf=>lf.points);
     return {x:frameX(fr), y:(allp.length>=3 ? polyArea(convexHull(allp)) : null)};
   });
-  lineChart($('#cArea'),`葉面積(px) (${unit})`, rawArea, aftArea, cx, {pts:hullArea,color:'#e11',label:'convex hull'});
+  lineChart($('#cArea'),`Projected leaf area, px (${unit})`, rawArea, aftArea, cx, {pts:hullArea,color:'#e11',label:'convex hull area'});
 }
 
 function fmtY(v){ return v>=10000? (v/1000).toFixed(0)+'k' : v>=1000? (v/1000).toFixed(1)+'k'
@@ -205,7 +246,7 @@ function fmtY(v){ return v>=10000? (v/1000).toFixed(0)+'k' : v>=1000? (v/1000).t
 
 function lineChart(svg,title,raw,after,curDaf,extra){
   const W=svg.clientWidth||460, H=svg.clientHeight||240, padL=46,padR=12,padT=18,padB=26;
-  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);   // 內部座標 = 像素，隨容器縮放
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);   // internal coordinates = pixels, scaled with the container
   const xs=raw.map(p=>p.x);
   const ys=raw.concat(after).concat(extra?extra.pts:[]).map(p=>p.y).filter(v=>v!=null);
   const xmin=Math.min(...xs),xmax=Math.max(...xs),ymax=Math.max(1,...ys);
@@ -224,19 +265,19 @@ function lineChart(svg,title,raw,after,curDaf,extra){
     s+=`<line x1="${x.toFixed(1)}" y1="${H-padB}" x2="${x.toFixed(1)}" y2="${H-padB+3}" stroke="#999"/>`;
     s+=`<text x="${x.toFixed(1)}" y="${H-padB+13}" font-size="9" text-anchor="middle" fill="#666">${xv}</text>`;
   }
-  s+=`<text x="${((padL+W-padR)/2).toFixed(0)}" y="${H-3}" font-size="9" text-anchor="middle" fill="#888">DAF (天)</text>`;
+  s+=`<text x="${((padL+W-padR)/2).toFixed(0)}" y="${H-3}" font-size="9" text-anchor="middle" fill="#888">Days after first image</text>`;
   s+=`<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#999"/>`;
   {const x=(curDaf!=null?sx(curDaf):-99);s+=`<line class="cursorline" x1="${x.toFixed(1)}" y1="${padT}" x2="${x.toFixed(1)}" y2="${H-padB}" stroke="#fa0" stroke-width="1.5" stroke-dasharray="3 2"/>`;}
   if(extra){ s+=`<path d="${path(extra.pts)}" fill="none" stroke="${extra.color}" stroke-width="1.5" stroke-dasharray="5 3"/>`; }
   s+=`<path d="${path(raw)}" fill="none" stroke="#999" stroke-width="1.5"/>`;
   s+=`<path d="${path(after)}" fill="none" stroke="#06c" stroke-width="2"/>`;
-  s+=`<text x="${W-78}" y="13" font-size="9" fill="#999">raw(before)</text>`;
-  s+=`<text x="${W-78}" y="24" font-size="9" fill="#06c">after</text>`;
+  s+=`<text x="${W-78}" y="13" font-size="9" fill="#999">all detections</text>`;
+  s+=`<text x="${W-78}" y="24" font-size="9" fill="#06c">kept</text>`;
   if(extra){ s+=`<text x="${W-78}" y="35" font-size="9" fill="${extra.color}">${extra.label}</text>`; }
   svg.innerHTML=s;
   svg._sx={xmin,xmax,padL,padR,W};
-  svg._geo={xmin,xmax,padL,padR,W,padT,yb:H-padB};   // 供 updateCursor 只移游標不重畫
-  svg.onclick=ev=>{                         // 點曲線 → 定位到該天的幀
+  svg._geo={xmin,xmax,padL,padR,W,padT,yb:H-padB};   // lets updateCursor move the cursor without a redraw
+  svg.onclick=ev=>{                         // click on the curves -> go to that day's image
     const r=svg.getBoundingClientRect();
     const {xmin,xmax,padL,padR,W}=svg._sx;
     const px=(ev.clientX-r.left)*(W/r.width);
@@ -245,7 +286,7 @@ function lineChart(svg,title,raw,after,curDaf,extra){
   };
 }
 
-function jumpToDaf(daf){                     // 跳到該 daf、優先正午代表幀
+function jumpToDaf(daf){                     // jump to that DAF, preferring the image nearest noon
   const cand=frames.map((f,k)=>({k,h:f.hour})).filter((o,i)=>frames[o.k].daf===daf);
   if(cand.length){ cand.sort((a,b)=>Math.abs(a.h-12)-Math.abs(b.h-12)); showFrame(cand[0].k); return; }
   let best=0,bd=1e9; frames.forEach((f,k)=>{const d=Math.abs(f.daf-daf);if(d<bd){bd=d;best=k;}}); showFrame(best);
@@ -256,7 +297,7 @@ function urlFor(fr){ return '/img?id='+encodeURIComponent(PID)+'&stem='+encodeUR
 function preload(i){ const fr=frames[i]; if(!fr) return; const u=urlFor(fr);
   if(!imgCache[u]){ const im=new Image(); im.src=u; imgCache[u]=im; } }
 
-// Andrew monotone chain：kept 葉頂點 → 凸包（與 pipeline solidity 分母一致）
+// Andrew monotone chain: vertices of retained leaves -> convex hull (the denominator of solidity in the trait extractor)
 function convexHull(pts){
   if(pts.length<3) return pts.slice();
   const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
@@ -265,20 +306,22 @@ function convexHull(pts){
   const up=[]; for(let i=p.length-1;i>=0;i--){ const q=p[i]; while(up.length>=2 && cross(up[up.length-2],up[up.length-1],q)<=0) up.pop(); up.push(q); }
   lo.pop(); up.pop(); return lo.concat(up);
 }
-// 多邊形面積 (shoelace)；對凸包等同 cv2.contourArea，與 pipeline hull_area 一致
+// polygon area (shoelace); for the hull it equals cv2.contourArea, as in the trait extractor's hull area
 function polyArea(pts){ let a=0; for(let i=0,n=pts.length;i<n;i++){ const p=pts[i],q=pts[(i+1)%n]; a+=p[0]*q[1]-q[0]*p[1]; } return Math.abs(a)/2; }
 
 function renderOverlay(fr){
   const ov=$('#overlay'); const c=DATA.ref_circle;
-  let s=`<circle cx="${c[0]}" cy="${c[1]}" r="${c[2]}" fill="none" stroke="#fd0" stroke-width="2"/>`;
+  let s=`<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#08f"/></marker></defs>`;
+  s+=`<circle cx="${c[0]}" cy="${c[1]}" r="${c[2]}" fill="none" stroke="#fff" stroke-width="2.5" stroke-dasharray="8 6"/>`;
   for(const lf of fr.leaves){
     const e=eff(lf.tid); const cls=(e===1?'keep':'reject')+((lf.tid in OV)?' ov':'')+(isCot(lf.tid)?' cot':'');
     const pts=lf.points.map(p=>p.join(',')).join(' ');
     s+=`<polygon class="${cls}" points="${pts}" data-tid="${lf.tid}"></polygon>`;
-    s+=`<line x1="${lf.base[0]}" y1="${lf.base[1]}" x2="${lf.tip[0]}" y2="${lf.tip[1]}" stroke="#08f" stroke-width="1.5"/>`;
-    s+=`<circle cx="${lf.base[0]}" cy="${lf.base[1]}" r="3" fill="#08f"/>`;
+    // Drawn from tip to base as in the manuscript's Fig. 3: open circle = tip, arrowhead = base.
+    s+=`<line x1="${lf.tip[0]}" y1="${lf.tip[1]}" x2="${lf.base[0]}" y2="${lf.base[1]}" stroke="#08f" stroke-width="1.5" marker-end="url(#ah)"/>`;
+    s+=`<circle cx="${lf.tip[0]}" cy="${lf.tip[1]}" r="3.5" fill="none" stroke="#08f" stroke-width="1.5"/>`;
   }
-  // kept 葉的凸包紅虛線：toggle keep/reject 後隨 renderOverlay 即時重算
+  // dashed hull of the retained leaves: recomputed by renderOverlay after each keep/reject toggle
   const kept=fr.leaves.filter(lf=>eff(lf.tid)===1 && lf.points.length>=3);
   const allp=kept.flatMap(lf=>lf.points);
   if(allp.length>=3){
@@ -293,34 +336,34 @@ function renderOverlay(fr){
 
 function showFrame(i){
   curIdx=i; const fr=frames[i]; if(!fr) return;
-  $('#finfo').textContent=`${fr.date}  ${String(fr.hour).padStart(2,'0')}:00  (DAF ${fr.daf})  frame ${i+1}/${frames.length}  leaves ${fr.leaves.length}`;
-  updateCursor();                          // 換幀只移游標；資料變動時由呼叫端另呼 drawCurves()
-  // 影像載入完成後才換圖+畫 overlay → polygon 永不疊在舊/空白影像上 (消除標記錯覺)
+  $('#finfo').textContent=`${fr.date} ${String(fr.hour).padStart(2,'0')}:00 · day ${fr.daf} after the first image · image ${i+1}/${frames.length} · ${fr.leaves.length} detections`;
+  updateCursor();                          // changing image only moves the cursor; callers redraw with drawCurves() when the data change
+  // swap the image and draw the overlay only after the image has loaded, so polygons never sit on a stale or blank image
   const u=urlFor(fr);
   let im=imgCache[u]; if(!im){ im=new Image(); im.src=u; imgCache[u]=im; }
   const apply=()=>{ if(curIdx!==i) return; $('#frameImg').src=u; renderOverlay(fr); };
   if(im.complete && im.naturalWidth) apply();
   else im.addEventListener('load', apply, {once:true});
-  for(let k=1;k<=3;k++){ preload(i+k); preload(i-k); }   // 預載鄰幀，scrub 即時
+  for(let k=1;k<=3;k++){ preload(i+k); preload(i-k); }   // preload neighbouring images so scrubbing is instant
 }
 
 let afterTimer=null;
 async function toggleLeaf(tid){
   const newState = eff(tid)===1 ? 0 : 1;
-  // 若回到 auto 值就清除 override，否則設定
+  // clear the decision if it equals the automatic value, otherwise set it
   if(newState === (autoKeep[tid]?1:0)) { delete OV[tid]; postOv(tid,-1); }
   else { OV[tid]=newState; postOv(tid,newState); }
-  showFrame(curIdx); drawCurves();      // count_after 立即
+  showFrame(curIdx); drawCurves();      // count_after at once
   clearTimeout(afterTimer);
-  afterTimer=setTimeout(async()=>{ await refreshAfter(); drawCurves(); }, 250);  // area_after debounce (只重算被改的那天)
+  afterTimer=setTimeout(async()=>{ await refreshAfter(); drawCurves(); }, 250);  // area_after debounced (recomputes only the edited day)
 }
 function postOv(tid,state){ fetch('/api/override',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:PID,tid,state})}); }
 
-async function toggleCot(tid){            // Shift+點葉：標/取消子葉（不動 keep/reject）
+async function toggleCot(tid){            // Shift+click on a leaf: mark or unmark a cotyledon (keep/reject unchanged)
   const klass = isCot(tid) ? '' : 'cotyledon';
   if(klass) CLS[tid]='cotyledon'; else delete CLS[tid];
   postCls(tid,klass); updateCotInfo();
-  if(dapdOn()) await refreshAfter();      // DAPD 預覽開啟 → 重算去子葉面積
+  if(dapdOn()) await refreshAfter();      // cotyledon-excluded preview on -> recompute the area without cotyledons
   showFrame(curIdx); drawCurves();
 }
 function postCls(tid,klass){ fetch('/api/class',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:PID,tid,klass})}); }
@@ -330,7 +373,7 @@ function jumpDay(dir){
   while(i+dir>=0 && i+dir<frames.length && frames[i+dir].daf===d) i+=dir;
   if(i+dir>=0 && i+dir<frames.length) showFrame(i+dir);
 }
-// 逐日模式：以每日代表幀為步進單位
+// per-day mode: step by daily representative image
 function stepDay(dir){
   if(!dayReps.length) return;
   const d=frames[curIdx].daf;
@@ -342,31 +385,31 @@ function stepDay(dir){
 $('#reviewBtn').onclick=async()=>{
   const el=document.querySelector('.plant.sel'); const now=!(el&&el.classList.contains('rev'));
   await fetch('/api/reviewed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:PID,reviewed:now})});
-  if(el) el.classList.toggle('rev',now); $('#revState').textContent=now?'（已審查）':'';
+  if(el) el.classList.toggle('rev',now); $('#revState').textContent=now?'(reviewed)':'';
   updateRollup();
 };
 $('#cotDoneBtn').onclick=async()=>{
   const el=document.querySelector('.plant.sel'); const now=!(el&&el.classList.contains('cot_done'));
   await fetch('/api/cotyledon_done',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:PID,done:now})});
-  if(el) el.classList.toggle('cot_done',now); $('#cotDoneState').textContent=now?'（已標）':'';
+  if(el) el.classList.toggle('cot_done',now); $('#cotDoneState').textContent=now?'(done)':'';
   updateRollup();
 };
 $('#dapdChk').addEventListener('change',async()=>{ if(!PID) return; await refreshAfter(); drawCurves(); });
 $('#modeChk').addEventListener('change',()=>{
   MODE = $('#modeChk').checked ? 'day' : 'hour';
-  if(dayMode() && frames.length){             // 切回逐日 → 目前幀吸附到當天代表幀
+  if(dayMode() && frames.length){             // back to per day -> snap the current image to that day's representative image
     const d=frames[curIdx].daf; const rep=dayReps.find(k=>frames[k].daf===d);
     if(rep!=null) curIdx=rep;
   }
-  drawCurves();                               // 點集(逐日/逐時)改變 → 整張重畫一次
-  if(frames.length) showFrame(curIdx);        // 換圖/overlay/游標
+  drawCurves();                               // the set of points (per day / per hour) changed -> redraw once
+  if(frames.length) showFrame(curIdx);        // image, overlay and cursor
 });
-$('#noteBox').addEventListener('input',()=>setNoteState('未儲存','#c60'));
+$('#noteBox').addEventListener('input',()=>setNoteState('Unsaved','#c60'));
 $('#noteSave').onclick=()=>writeNote($('#noteBox').value);
-$('#noteClear').onclick=()=>{ if(!$('#noteBox').value.trim() || confirm('清除此植株的觀察註記？')){ $('#noteBox').value=''; writeNote(''); } };
+$('#noteClear').onclick=()=>{ if(!$('#noteBox').value.trim() || confirm('Clear the notes on this plant?')){ $('#noteBox').value=''; writeNote(''); } };
 document.addEventListener('keydown',e=>{
   if(['INPUT','TEXTAREA'].includes(e.target.tagName) || !frames.length) return;
-  if(dayMode()){                              // 逐日：a/d 與 w/s 都以天為單位
+  if(dayMode()){                              // per day: a/d and w/s both step by day
     if(e.key==='d'||e.key==='w') stepDay(1);
     else if(e.key==='a'||e.key==='s') stepDay(-1);
   } else {

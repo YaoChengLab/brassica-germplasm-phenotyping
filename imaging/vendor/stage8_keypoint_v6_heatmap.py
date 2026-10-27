@@ -1,12 +1,12 @@
 """Stage 8 v6 — heatmap regression baseline.
 
-vs v5 (coord regression) 三點本質差別：
-  1. Output: (2, 64, 64) heatmap 取代 (4,) scalar tuple
-  2. Loss: 單一 MSE on heatmap，不需要 direction/spread/collapse_penalty
-     （這些 failure mode 在 heatmap paradigm 下天生不會發生）
-  3. Inference: soft-argmax 取 sub-pixel 座標
+Three differences from the coordinate regression in stage8_keypoint_v5:
+  1. Output: a (2, 64, 64) heatmap instead of a (4,) tuple of scalars
+  2. Loss: a single MSE on the heatmap, without direction/spread/collapse penalties
+     (those failure modes do not arise with heatmaps)
+  3. Inference: soft-argmax gives sub-pixel coordinates
 
-Input pipeline 與 v5 相同（重用 LeafDatasetV5）：4-channel RGB + polygon mask。
+The input pipeline is the same as stage8_keypoint_v5 (LeafDatasetV5): 4-channel RGB + polygon mask.
 """
 from __future__ import annotations
 

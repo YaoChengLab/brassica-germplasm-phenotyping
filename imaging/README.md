@@ -18,7 +18,7 @@ conda activate bgp-imaging
 python imaging/download_weights.py
 ```
 
-`download_weights.py` puts four weights in `imaging/weights/` and checks each file's SHA-256. Three are ours and come from this repository's GitHub Release. The fourth, GenYOLO-Leaf (`genyolo_leaf_yolov11m.pt`), is downloaded from its authors' release at <https://github.com/aaslihanyildirim/GenYOLO-Leaf>; it is not redistributed here.
+`download_weights.py` puts four weights in `imaging/weights/` and checks each file's SHA-256. Three are ours and come from this repository's GitHub Releases: the leaf segmentation models `brassicaceae_leaf_seg.pt` and `brassicaceae_lobed_leaf_seg.pt` (tag `yolo-weight`) and the leaf keypoint model `brassicaceae_leaf_keypoint.pth` (tag `keypoint-weight`). The fourth, GenYOLO-Leaf (`genyolo_leaf_yolov11m.pt`), is downloaded from its authors' release at <https://github.com/aaslihanyildirim/GenYOLO-Leaf>; it is not redistributed here.
 
 The first run of `build.py` also downloads the ImageNet weights for ResNet-18 through torchvision, so the machine needs internet access once.
 
@@ -49,7 +49,7 @@ Every path can be changed with an environment variable. The defaults are inside 
 |---|---|---|
 | `RASPI_ROOT` | `raspi_RGB/` at the repository root | Single-plant images, `<batch>/<accession>/<treatment>/rep-<n>/*.png` |
 | `QC_ROOT` | `qc/` | `data/` for `frames.json`, and `qc.sqlite` for review decisions |
-| `WEIGHTS_DIR` | `imaging/weights/` | The four model weights |
+| `WEIGHTS_DIR` | `imaging/weights/` | The four model weights; see [weights/README.md](weights/README.md) |
 | `OUT_DIR` | `imaging/out/` | Trait CSV files |
 | `OVERLAY_ROOT` | `raspi_RGB_overlay/` next to `RASPI_ROOT` | Overlay images from `overlays/render_overlays.py` |
 
@@ -57,8 +57,8 @@ Every path can be changed with an environment variable. The defaults are inside 
 
 We recommend running inference on a GPU. On a machine without one, `build.py` falls back to the CPU automatically, but the results will float slightly.
 
-- The GPU reproduces the published `frames.json` exactly for the demo plant: detections, keep decisions, track IDs and polygons.
-- On the CPU, leaf masks differ at their edges (median IoU 0.96 against the GPU masks), a few frames gain or lose one leaf, and the daily mean kept leaf area differs by up to about 7%, most on the first demo day, when the leaves are smallest.
+- The GPU reproduces the `frames.json` used for the manuscript exactly for the demo plant: detections, keep decisions, track IDs and polygons.
+- On the CPU, leaf masks differ at their edges (median IoU 0.96 against the GPU masks), a few single-plant images gain or lose one leaf, and the daily mean kept leaf area differs by up to about 7%, most on the first demo day, when the leaves are smallest.
 - The cause is floating-point differences between the two devices, not the confidence threshold. Confidence scores agree to within 0.002.
 - Track IDs can change on the CPU, so QC overrides recorded on one device's output do not carry over to the other device's output.
 
