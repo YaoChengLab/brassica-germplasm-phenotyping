@@ -12,8 +12,6 @@ We developed a system that links crop accessions to repeated plant images, measu
 
 Developed by the [Bioinformatics & Computational Genomics Group](https://www.southerngenomics.org/home).
 
-> **Status:** under preparation. The imaging workflow, review tool, platform, analysis script and demo data are available; the model weights are attached to this repository's GitHub Releases.
-
 ## Contents
 
 | Directory | Contents |
@@ -42,6 +40,8 @@ growth-curve traits per plant
 ```
 
 Run the imaging steps before starting the platform: the platform mounts the overlay directory, and Docker creates a missing directory as root, which the overlay script then cannot write to.
+
+The imaging, review and analysis steps need conda, for example [Miniforge](https://github.com/conda-forge/miniforge); the platform needs Docker with Compose v2. The demo was tested on Ubuntu 22.04, on a workstation with an NVIDIA RTX A2000 GPU and on a virtual machine with one CPU core and no GPU.
 
 ## Scope of this release
 

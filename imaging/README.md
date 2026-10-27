@@ -12,6 +12,8 @@ demo/crops/<batch>/<accession>/<treatment>/rep-<n>/*.png
 
 ## Setup
 
+The environment is created with conda; [Miniforge](https://github.com/conda-forge/miniforge) is one way to install it.
+
 ```
 conda env create -f imaging/environment.yml
 conda activate bgp-imaging
@@ -21,6 +23,8 @@ python imaging/download_weights.py
 `download_weights.py` puts four weights in `imaging/weights/` and checks each file's SHA-256. Three are ours and come from this repository's GitHub Releases: the leaf segmentation models `brassicaceae_leaf_seg.pt` and `brassicaceae_lobed_leaf_seg.pt` (tag `yolo-weight`) and the leaf keypoint model `brassicaceae_leaf_keypoint.pth` (tag `keypoint-weight`). The fourth, GenYOLO-Leaf (`genyolo_leaf_yolov11m.pt`), is downloaded from its authors' release at <https://github.com/aaslihanyildirim/GenYOLO-Leaf>; it is not redistributed here.
 
 The first run of `build.py` also downloads the ImageNet weights for ResNet-18 through torchvision, so the machine needs internet access once.
+
+On a Linux machine without a desktop environment, such as a server or a virtual machine, `import cv2` can fail with `libGL.so.1: cannot open shared object file`. Install the library into the environment with `conda install -n bgp-imaging -c conda-forge libgl`.
 
 ## Run the demo
 
