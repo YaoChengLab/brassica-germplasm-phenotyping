@@ -1,0 +1,21 @@
+field,file,definition,unit
+batch,Both,Batch identifier,code
+accession,Both,Accession identifier; repeats across batches are retained,code
+crop_type,Both,Crop-group label from source,category
+genome,Both,Source genome label; nd is retained,category
+plant_id,fig6_plant_traits.csv,Source within-batch/accession plant identifier; not matched to fresh-weight replicates,identifier
+n_plants_img,Table_units_269.csv,Number of image-trait plant records averaged for the unit,count
+n_plants_fw,Table_units_269.csv,Number of valid fresh-weight records in the archived unit mean,count
+das_ref,Both,Batch image summary time,days after sowing
+harvest_das,Table_units_269.csv,Mean harvest time for fresh-weight records,days after sowing
+harvest_gap_d,Table_units_269.csv,harvest_das minus das_ref; retained without adjustment,days
+fw_mean_g,Table_units_269.csv,Archived accession-batch mean fresh weight,g
+fw_sd_g,Table_units_269.csv,Archived within-unit standard deviation of fresh weight,g
+area_ref,Both,Projected leaf area at the batch summary date; averaged across plants in unit table,px²
+count_ref,Both,Visible leaf count at the batch summary date; averaged across plants in unit table,count
+solidity,Both,"Source mask-area to convex-hull-area ratio, averaged over summary window",dimensionless
+ellipse_aspect_ratio,Both,"Source fitted-ellipse aspect ratio, averaged over summary window",dimensionless
+excess_green_index,Both,"Source excess green index, averaged over summary window; uncorrected image color",digital-number index
+rgr_slope,Both,Slope of ln(daily mean projected leaf area) against days after sowing over imaging window,day⁻¹
+in_model,Table_units_269.csv,Historical membership flag; regenerated for each scenario,boolean
+exclusion_reason,Table_units_269.csv,Historical model exclusion note; regenerated for each scenario,text

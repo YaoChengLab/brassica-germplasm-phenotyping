@@ -1,0 +1,5 @@
+model,formula,n,params,R2,adj_R2,AIC,BIC,RMSE_ln,CV_R2,CV_R2_sd,CV_RMSE_ln,CV_RMSE_sd,CV_median_abs_pct_err
+M0,lnFW ~ C(batch),269,12,0.798,0.7893,388.2,431.4,0.4872,0.7796,0.003078,0.4974,0.00347,30.66
+M1,lnFW ~ lnArea + C(batch),269,13,0.8815,0.8759,246.8,293.5,0.3739,0.8646,0.003133,0.3898,0.004509,20.52
+M2,lnFW ~ lnArea + z_count_ref + z_solidity + C(batch),269,15,0.8842,0.8778,244.6,298.5,0.3711,0.8649,0.003511,0.3894,0.005064,20.19
+M2_aspect,lnFW ~ lnArea + z_count_ref + z_ellipse_aspect_ratio + C(batch),269,15,0.8816,0.8751,250.4,304.3,0.3751,0.8631,0.003231,0.3919,0.004618,20.39

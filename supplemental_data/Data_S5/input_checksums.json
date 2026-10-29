@@ -1,0 +1,98 @@
+[
+  {
+    "path": "Fig.5/data/s0232_daily_by_plant.csv",
+    "sha256": "531bc202068827058becf56e93887a60559bb70a60963e40ef3aa15ca493688e"
+  },
+  {
+    "path": "Fig.6/data/fig6_accession_traits.csv",
+    "sha256": "87c8b1b067846b30921dc851554b3b10aa7c375e86776f760e3d8988cd117495"
+  },
+  {
+    "path": "Fig.6/data/fig6_plant_traits.csv",
+    "sha256": "bec7b56ecce7acc75b2155e5166464ac7c35304c9625b54fb5a9e8b7a975f0a2"
+  },
+  {
+    "path": "Fig.7/data/Table_units_269.csv",
+    "sha256": "2346ea08f8fbed79403bcee4a92665d9385a1c73a4b2a74f2ac01ef1da785c5b"
+  },
+  {
+    "path": "Fig.7/data/data_dictionary.csv",
+    "sha256": "4ad5e476ff6352653eeae964e840d52f1525bedea3d7fb6ac944155b301fa96d"
+  },
+  {
+    "path": "Fig.7/data/fig6_plant_traits.csv",
+    "sha256": "bec7b56ecce7acc75b2155e5166464ac7c35304c9625b54fb5a9e8b7a975f0a2"
+  },
+  {
+    "path": "Fig.7/data/provenance.json",
+    "sha256": "bdbcb855c0209ffb0fc8fb0654be8fef167a4c8804339ca4e4af753b4a000a4b"
+  },
+  {
+    "path": "Fig.7/reference/Table_S7_original.csv",
+    "sha256": "260ac6477706d676e65e48a79f24ebd855eccf353ff8ab39e04aa8c0a86778b7"
+  },
+  {
+    "path": "Fig.7/reference/Table_association.csv",
+    "sha256": "0d61906df81d62078598dfccc0ee7c79e1737b1df92b47d2b28e1fc4462077dd"
+  },
+  {
+    "path": "Fig.7/reference/Table_batch_diagnostics.csv",
+    "sha256": "9dc1144bb8c6084a11348538299eaa01cea16f155bc5450a3b0f3bfba3c7e675"
+  },
+  {
+    "path": "Fig.7/reference/Table_coefficients.csv",
+    "sha256": "fcd318c76688fabe78c8ce916fe10a0a3de8764bc3b29d6c0590629ec8b350b5"
+  },
+  {
+    "path": "Fig.7/reference/Table_model_comparison.csv",
+    "sha256": "4ae15a9d2dc44c456962638a5d722b9af42c1467a9403c8d3e1563e1ba6a8086"
+  },
+  {
+    "path": "Supp.Fig.S2/data/ownership_twobatch_by_das.csv",
+    "sha256": "6149fd99cec0ee6586e24f1b2f1871b9e9fccfe8ef3b29c00dc0b73b639f1c8d"
+  },
+  {
+    "path": "Supp.Fig.S2/data/ownership_twobatch_cotyledon.csv",
+    "sha256": "3daae758ef76fc3ff11d5ec77e3724fe0ae3cef601255bf8ce522397c1eb28fb"
+  },
+  {
+    "path": "Supp.Fig.S2/data/ownership_twobatch_summary.csv",
+    "sha256": "aace3046d0a28b6a5f32482771a83898c30d91b3051d10f94ee31b07bc8f8a70"
+  },
+  {
+    "path": "Supp.Fig.S3/data/s0232_daily_by_plant.csv",
+    "sha256": "531bc202068827058becf56e93887a60559bb70a60963e40ef3aa15ca493688e"
+  },
+  {
+    "path": "Supp.Fig.S3/data/s0232_timeseries_features.csv",
+    "sha256": "7b55c47fdb290f3085cfa5b28e8513988dff5f6e7c7b94832fcf9d1bbc2b1798"
+  },
+  {
+    "path": "Supp.Fig.S4/data/dead_plant_s0124_noon.csv",
+    "sha256": "a5a94c6cd1b81774fa675bdd2975e63814e11020e3397b8522a802e89bebbfb7"
+  },
+  {
+    "path": "Supp.Fig.S4/data/dead_plant_s0124_tiles.json",
+    "sha256": "4861aeca069bfb789f583d0f716e92a89f889c39f578066d63dcc02c56660b0c"
+  },
+  {
+    "path": "Supp.Table.S5/data/detection_test.json",
+    "sha256": "34f2465cd95a211b96b65de77f3d2f231e5960072af8458f968ed3971d5cf29b"
+  },
+  {
+    "path": "Supp.Table.S5/data/keypoint_v8_eval_per_leaf.csv",
+    "sha256": "de327e1e37ecfe4b9ff64910b57632f6d777aa257cf89100e35c3ca51fd971ef"
+  },
+  {
+    "path": "Table.1/data/ownership_twobatch_by_accession.csv",
+    "sha256": "2aa586e8577fde9103e42350e7b56d3bd926dbe68154e491f6812a990a4fb681"
+  },
+  {
+    "path": "Table.1/data/ownership_twobatch_cotyledon.csv",
+    "sha256": "3daae758ef76fc3ff11d5ec77e3724fe0ae3cef601255bf8ce522397c1eb28fb"
+  },
+  {
+    "path": "Table.1/data/ownership_twobatch_summary.csv",
+    "sha256": "aace3046d0a28b6a5f32482771a83898c30d91b3051d10f94ee31b07bc8f8a70"
+  }
+]

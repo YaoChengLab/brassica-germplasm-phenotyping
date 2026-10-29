@@ -1,0 +1,7 @@
+trait,partial_pearson_r,p,within_batch_spearman_rho,p_spearman,p_bonferroni
+area_ref,0.6429,9.199e-33,0.7014,3.825e-41,5.519e-32
+count_ref,0.2331,0.0001139,0.4469,1.302e-14,0.0006834
+solidity,0.2316,0.0001262,0.4423,2.596e-14,0.0007572
+ellipse_aspect_ratio,-0.237,8.666e-05,0.04987,0.4153,0.00052
+excess_green_index,0.2822,2.561e-06,0.4413,2.998e-14,1.536e-05
+rgr_slope,-0.3876,4.522e-11,-0.001403,0.9817,2.713e-10

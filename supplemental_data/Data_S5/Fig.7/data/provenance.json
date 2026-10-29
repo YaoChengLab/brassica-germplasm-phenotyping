@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-25",
+  "starting_point": "Archived accession-batch means; not raw fresh-weight records.",
+  "files": [
+    {
+      "path": "data/Table_units_269.csv",
+      "sha256": "2346ea08f8fbed79403bcee4a92665d9385a1c73a4b2a74f2ac01ef1da785c5b"
+    },
+    {
+      "path": "data/fig6_plant_traits.csv",
+      "sha256": "bec7b56ecce7acc75b2155e5166464ac7c35304c9625b54fb5a9e8b7a975f0a2"
+    },
+    {
+      "path": "reference/Table_S7_original.csv",
+      "sha256": "260ac6477706d676e65e48a79f24ebd855eccf353ff8ab39e04aa8c0a86778b7"
+    },
+    {
+      "path": "reference/Table_model_comparison.csv",
+      "sha256": "4ae15a9d2dc44c456962638a5d722b9af42c1467a9403c8d3e1563e1ba6a8086"
+    },
+    {
+      "path": "reference/Table_association.csv",
+      "sha256": "0d61906df81d62078598dfccc0ee7c79e1737b1df92b47d2b28e1fc4462077dd"
+    },
+    {
+      "path": "reference/Table_coefficients.csv",
+      "sha256": "fcd318c76688fabe78c8ce916fe10a0a3de8764bc3b29d6c0590629ec8b350b5"
+    },
+    {
+      "path": "reference/Table_batch_diagnostics.csv",
+      "sha256": "9dc1144bb8c6084a11348538299eaa01cea16f155bc5450a3b0f3bfba3c7e675"
+    }
+  ],
+  "packaging_note": "Historical scripts omitted; statistical reference bytes unchanged.",
+  "corrections": [
+    {
+      "date": "2026-10-28",
+      "path": "data/Table_units_269.csv",
+      "change": "2025B13 harvest date corrected to 2025-12-18; harvest_das 36 -> 37 and harvest_gap_d -1 -> 0 in 11 rows. No model input column changed."
+    }
+  ]
+}

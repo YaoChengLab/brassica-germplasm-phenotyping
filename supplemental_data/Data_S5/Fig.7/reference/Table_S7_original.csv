@@ -1,0 +1,21 @@
+Statistic,All 12 batches (main analysis),Excluding 2025B12 and 2025B13 (sensitivity)
+Analysis units (accession × batch),269,221
+Accessions / batches,257 / 12,211 / 10
+Plants imaged / weighed,1074 / 1056,884 / 864
+"Partial r, ln PLA vs ln FW (95% CI)",0.64 (0.57–0.71),0.76 (0.70–0.81)
+"Within-batch Spearman rho, PLA vs FW",0.70,0.79
+"Slope of ln FW on ln PLA, M1 (95% CI)",0.70 (0.47–0.93),0.86 (0.72–1.01)
+Partial R² of ln PLA after batch,0.41,0.58
+M1 adjusted R²,0.876,0.885
+"M1 cross-validated R² (mean ± SD, 50 repeats)",0.865 ± 0.003,0.878 ± 0.002
+M1 cross-validated RMSE (ln scale),0.390,0.330
+M1 median absolute prediction error,21%,18%
+M2 cross-validated R² (mean ± SD),0.865 ± 0.004,0.875 ± 0.002
+"ΔAIC, M2 − M1",-2.2,+2.0
+"ΔBIC, M2 − M1",+5.0,+8.8
+"M2 vs M1, nested F test","F(2,254) = 2.96, P = 0.053","F(2,208) = 0.96, P = 0.384"
+"M2 vs M1, cluster-robust Wald test, P",0.127,0.462
+"Leaf count coefficient in M2, P",0.58,0.79
+"Solidity coefficient in M2, P",0.071,0.245
+Batch × ln PLA interaction (slope heterogeneity),"F(11,245) = 5.47, P = 8.6e-08","F(9,201) = 2.54, P = 0.009"
+"Largest Cook's distance, M1 (unit)",0.40 (2025B12 s0329),0.17 (2025B14 s0165)

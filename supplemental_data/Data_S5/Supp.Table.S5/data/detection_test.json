@@ -1,0 +1,21 @@
+{
+  "weights": "brassicaceae_leaf_seg.pt (GitHub release yolo-weight)",
+  "data": "in-house test split, 618 images (not included)",
+  "split": "test",
+  "imgsz": 640,
+  "ultralytics": "8.3.228",
+  "images": 618,
+  "instances": 3211,
+  "mask": {
+    "precision": 0.901854149479125,
+    "recall": 0.8779196511990034,
+    "mAP50": 0.9403213240950722,
+    "mAP50_95": 0.7872251484037966
+  },
+  "box": {
+    "precision": 0.8968872155462827,
+    "recall": 0.8704453441295547,
+    "mAP50": 0.9322955764654615,
+    "mAP50_95": 0.8199247874484303
+  }
+}

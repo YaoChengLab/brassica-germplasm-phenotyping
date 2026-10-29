@@ -21,6 +21,7 @@ Developed by the [Bioinformatics & Computational Genomics Group](https://www.sou
 | `platform/` | Database, web interface and API (Docker Compose), and the loader that writes traits into the database |
 | `analysis/` | Growth-curve traits computed from the platform's daily trait export |
 | `demo/` | 69 single-plant images of one plant over six days, and the metadata to register its batch |
+| `supplemental_data/` | Supplemental Data S1–S5 of the manuscript: the data tables, and the code that reruns the manuscript figures and tables from them |
 
 ## Run the demo
 
@@ -48,7 +49,7 @@ The imaging, review and analysis steps need conda, for example [Miniforge](https
 - **The demo starts from single-plant crops.** Raw camera frames and the script that matched frames to plants and cut the crops are not included. The plant positions and time windows that drive this matching are stored in the database and shown on the batch pages.
 - **Environmental sensor records are not imported.** The database tables and the environment export are included, but the import script is not, and the demo batch has no environment records.
 - **Time-series traits:** the ten growth-curve traits are computed by `analysis/growth_params.py`. The nine canopy-closure traits are not included in this release.
-- **Statistical analyses** (validation of the automatic assignment against manual review, the collection survey) are not part of this release.
+- **Statistical analyses** (validation of the automatic assignment against manual review, the collection survey, the fresh-weight models) are in `supplemental_data/Data_S5/`. They start from prepared tables and do not connect to the platform.
 - **The demo covers six imaging days.** Time-series traits computed from it therefore differ from values computed over a plant's full imaging period.
 
 ## Names
@@ -61,4 +62,6 @@ The platform has no login: every request acts as one operator, and anyone who ca
 
 ## License
 
-GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
+Unless stated otherwise, the contents of this repository, including the scripts in `supplemental_data/`, are licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
+
+The data files in `supplemental_data/` are licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0). See [supplemental_data/README.md](supplemental_data/README.md).

@@ -15,3 +15,9 @@ imaging/weights/*
 !imaging/weights/README.md
 imaging/out/
 raspi_RGB_overlay/
+
+# outputs of the supplemental analysis code
+supplemental_data/Data_S5/.venv/
+supplemental_data/Data_S5/results/
+supplemental_data/Data_S5/*/output/
+supplemental_data/Data_S5/Fig.7/outputs/
